@@ -1,0 +1,6 @@
+.dat
+.dist
+package-lock.json
+node_modules
+env/ssl/*
+.env

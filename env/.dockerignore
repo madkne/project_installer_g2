@@ -1,0 +1,12 @@
+nohup.out
+Dockcerfile
+.git
+venv/
+staticfiles/
+data/
+data_volume/
+*/migrations/
+db.sqlite3
+__pycache__/
+*/__pycache__/
+data/*

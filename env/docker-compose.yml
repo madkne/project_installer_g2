@@ -1,0 +1,137 @@
+version: "3.9"
+
+services:
+  mysql:
+    # container_name: talent_mysql
+    # command: mysqld --character-set-server=utf8 --collation-server=utf8_general_ci
+    command: mysqld --default-authentication-plugin=mysql_native_password --character-set-server=utf8 --collation-server=utf8_general_ci
+    image: {{docker_registery}}/mysql:8.0
+    ports:
+      - "{{'' if allow_public_mysql else '127.0.0.1:'}}{{mysql_port}}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: '{{mysql_password}}'
+      MYSQL_DATABASE: 'talent'
+      HOSTNAME: 'mysql'
+      MYSQL_TCP_PORT: {{mysql_port}}
+    restart: unless-stopped
+    # networks:
+    #   project_net:
+    #     aliases:
+    #       - mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      timeout: 2s
+      retries: 30
+    volumes:
+      - ./data/mysql:/var/lib/mysql
+      - ./hooks/mysql:/docker-entrypoint-initdb.d
+    depends_on:
+      - redis
+
+
+  backend_app:
+    image: {{backend_project_docker_image}}
+    # container_name: talent_app
+    volumes:
+      - ./data/static:/app/staticfiles
+      - ./data/media:/app/media
+      - ./hooks/app/settings/:/app/talent/settings
+      - ./data/mysql_backups/:/app/backups
+    #   - ./data/app:/app/:ro
+
+    ports:
+      - "127.0.0.1:8000:8000"
+    # entrypoint: /bin/bash ./docker_entrypoints/app.sh
+    environment:
+      DJANGO_SETTINGS_MODULE: talent.settings.production
+      UWSGI_WORKERS: 1
+      DATABASE_HOST: mysql
+    restart: unless-stopped
+    links:
+      - mysql
+    depends_on:
+      mysql:
+        # condition: service_completed_successfully
+        condition: service_healthy
+    # networks:
+    #   project_net:
+    #     aliases:
+    #       - backend_app
+
+  frontend_app:
+    image: {{frontend_project_docker_image}}
+    # container_name: talent_app
+    volumes:
+      - ./hooks/app/front/configs.js:/usr/share/nginx/html/assets/js/configs.js:ro
+
+    ports:
+      - "8081:80"
+    # entrypoint: /bin/bash ./docker_entrypoints/app.sh
+    restart: unless-stopped
+    # networks:
+    #   project_net:
+    #     aliases:
+    #       - frontend_app
+    # - expose:
+    #   - 8001
+  # Web proxy for SSL termination
+  caddy:
+    image: {{docker_registery}}/caddy:2.3.0
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      
+    volumes:
+      - ./hooks/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      
+  nginx:
+    image: {{docker_registery}}/nginx:stable
+    restart: unless-stopped
+    # container_name: talent_nginx
+    # ports:
+    #   - "{{nginx_port}}:{{nginx_port}}"
+    #   {% if ssl_enabled %}
+    #   - "80:80"
+    #   {% endif %}
+    volumes:
+      - ./hooks/nginx/conf:/etc/nginx/conf.d
+      - ./hooks/nginx/uwsgi_params:/etc/nginx/uwsgi_params
+      - ./data/static:/static
+      - ./data/media:/media
+      - ./data/nginx/logs:/var/log/nginx
+      {% if ssl_enabled %}
+      - ./ssl:/etc/nginx/certs
+      {% endif %}
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+    networks:
+      default:
+        # These aliases are for internal communication between containers when running locally with *.{{lms_host}} hostnames.
+        aliases:
+          - "{{domain_name}}"
+
+    depends_on:
+      - backend_app
+      - frontend_app
+    # networks:
+    #   project_net:
+    #     aliases:
+    #       - nginx
+
+
+
+  redis:
+    image: {{docker_registery}}/redis:alpine
+    restart: unless-stopped
+    # container_name: talent_redis
+    ports:
+      - "{{'' if allow_public_redis else '127.0.0.1:'}}6379:6379"
+
+    # networks:
+    #   talent:
+    #     aliases:
+    #       - nginx
+
+
+# networks:
+#   project_net:
+#     driver: bridge

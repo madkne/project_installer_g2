@@ -1,0 +1,30 @@
+
+
+### STAGE 1: Build ###
+FROM {{docker_registery}}/node:14.15-alpine AS build
+
+# RUN npm i -g @angular/cli
+
+
+# Install app dependencies:
+# use changes to package.json to force Docker not to use the cache
+# when we change our application's nodejs dependencies:
+# COPY {{project_name}}_frontend/package.json ./
+COPY {{project_name}}_frontend/package.json /tmp/package.json
+RUN cd /tmp && npm install -f --prod && npm i --save-dev @angular-devkit/build-angular && npm audit fix --force
+RUN mkdir -p /usr/src/app && cp -a /tmp/node_modules /usr/src/app/
+# RUN npm install -f --prod
+# RUN npm install --save-dev @angular-devkit/build-angular
+# RUN npm audit fix --force
+# RUN ng build --prod
+WORKDIR /usr/src/app
+COPY {{project_name}}_frontend/ .
+# Generate the build of the application
+RUN npm run build
+### STAGE 2: Run ###
+FROM {{docker_registery}}/nginx:1.17.1-alpine
+COPY hooks/nginx/front_nginx.conf /etc/nginx/nginx.conf
+COPY --from=build /usr/src/app/dist/* /usr/share/nginx/html
+
+EXPOSE 80/tcp
+# EXPOSE 443/tcp
