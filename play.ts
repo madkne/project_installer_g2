@@ -15,7 +15,7 @@ dotenv.config();
 /************************************* */
 type CommandName = 'install' | 'createSuperUser' | 'run-mysql' | 'stop';
 type CommandArgvName = 'non-interactive' | 'level' | 'skip-rebuild-frontend' | 'skip-rebuild-backend' | 'restart_mysql' | 'skip-remove-unused-images' | 'skip-clone-frontend' | 'skip-clone-backend';
-type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'docker_project_name' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'allowed_host' | 'env_path' | 'dist_path';
+type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'allowed_host' | 'env_path' | 'dist_path';
 type ConfigsObject = { [k in ConfigVariableKey]: any };
 interface EnvFileStruct {
    project_name: string;
@@ -82,6 +82,7 @@ function loadDefualtEnvVariables() {
    if (!envFile.app_subdomain_name) {
       envFile.app_subdomain_name = 'app';
    }
+   // console.log(envFile)
    return envFile;
 }
 /************************************* */
@@ -109,11 +110,6 @@ export async function main(): Promise<number> {
          alias: 'i',
          implement: async () => await install(),
          argvs: [
-            {
-               name: 'non-interactive',
-               alias: 'I',
-               description: 'Run non-interactively',
-            },
             {
                name: 'level',
                alias: 'l',
@@ -364,9 +360,9 @@ async function install() {
    }
    if (fs.existsSync(path.join(distBackendProjectPath, 'init.sh'))) {
       // =>copy backend app hook
-      if (await OS.shell(`docker cp ${path.join(distBackendProjectPath, 'init.sh')} ${configs.docker_project_name}_backend_app_1:/app`) !== 0) return false;
+      if (await OS.shell(`docker cp ${path.join(distBackendProjectPath, 'init.sh')} ${projectEnv.project_name}_backend_app_1:/app`) !== 0) return false;
       // =>execute shell file
-      if (await OS.shell(`docker exec ${configs.docker_project_name}_backend_app_1 bash -c "chmod +x /app/init.sh; /app/init.sh"`) !== 0) {
+      if (await OS.shell(`docker exec ${projectEnv.project_name}_backend_app_1 bash -c "chmod +x /app/init.sh; /app/init.sh"`) !== 0) {
          LOG.error('error for copy backend app hook');
          return false;
       }
@@ -421,7 +417,7 @@ async function createSuperUser() {
    let password: string = await IN.password('Enter your password: ')
 
    LOG.log(`creating super user...`)
-   let res = await OS.shell(`docker container exec ${configs.docker_project_name}_backend_app_1 bash -c "python /app/manage.py shell -c \\"from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.create_superuser('${email}', '${password}')\\""`);
+   let res = await OS.shell(`docker container exec ${projectEnv.project_name}_backend_app_1 bash -c "python /app/manage.py shell -c \\"from django.contrib.auth import get_user_model; User = get_user_model(); User.objects.create_superuser('${email}', '${password}')\\""`);
 
    if (res === 0) {
       LOG.success('super user created.');
@@ -433,14 +429,14 @@ async function createSuperUser() {
 async function createSystemUser() {
    LOG.log(`creating system user if not exists...`)
    let pythonScriptPath = path.join(envHooksPath, 'app', 'create_system_user.py')
-   let res = await OS.shell(`docker cp ${pythonScriptPath}  ${configs.docker_project_name}_app_1:/app`)
+   let res = await OS.shell(`docker cp ${pythonScriptPath}  ${projectEnv.project_name}_app_1:/app`)
    if (res !== 0) {
-      LOG.error(`error: couldn't copy python script to ${configs.docker_project_name}_app_1 container!`)
+      LOG.error(`error: couldn't copy python script to ${projectEnv.project_name}_app_1 container!`)
       return;
    }
-   res = await OS.shell(`docker container exec ${configs.docker_project_name}_app_1 bash -c "cat create_system_user.py | python /app/manage.py shell"`)
+   res = await OS.shell(`docker container exec ${projectEnv.project_name}_app_1 bash -c "cat create_system_user.py | python /app/manage.py shell"`)
    if (res !== 0) {
-      LOG.error(`error: couldn't execute python script inside ${configs.docker_project_name}_app_1 container!`)
+      LOG.error(`error: couldn't execute python script inside ${projectEnv.project_name}_app_1 container!`)
       return;
    }
    LOG.success('done.');
@@ -486,7 +482,7 @@ async function loadAllConfig(): Promise<ConfigsObject> {
    configs.env_path = envPath;
    configs.dist_path = distPath;
    // =>set more vars
-   dockerComposeCommand = `docker-compose -f ${path.join(distPath, 'docker-compose.yml')} --project-name ${configs.docker_project_name}`;
+   dockerComposeCommand = `docker-compose -f ${path.join(distPath, 'docker-compose.yml')} --project-name ${projectEnv.project_name}`;
    //console.log('configs:', configs)
    return configs;
 }
