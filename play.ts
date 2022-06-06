@@ -49,20 +49,31 @@ let projectEnv: EnvFileStruct;
 
 function loadDefualtEnvVariables() {
    let envFile: EnvFileStruct = process.env as any;
+   // if (typeof envFile.ssl_enabled === 'string') {
+   //    envFile.ssl_enabled = Boolean(envFile.ssl_enabled);
+   // }
    if (!envFile.mysql_port) {
       envFile.mysql_port = 3306;
    }
    if (envFile.debug_mode === undefined) {
       envFile.debug_mode = true;
+   } else if (typeof envFile.debug_mode === 'string') {
+      envFile.debug_mode = (envFile.debug_mode === 'true') ? true : false;
    }
-   if (!envFile.allow_public_mysql == undefined) {
+   if (envFile.allow_public_mysql == undefined) {
       envFile.allow_public_mysql = false;
+   } else if (typeof envFile.allow_public_mysql === 'string') {
+      envFile.allow_public_mysql = (envFile.allow_public_mysql === 'true') ? true : false;
    }
-   if (!envFile.allow_public_redis == undefined) {
+   if (envFile.allow_public_redis == undefined) {
       envFile.allow_public_redis = false;
+   } else if (typeof envFile.allow_public_redis === 'string') {
+      envFile.allow_public_redis = (envFile.allow_public_redis === 'true') ? true : false;
    }
-   if (!envFile.ssl_enabled == undefined) {
+   if (envFile.ssl_enabled == undefined) {
       envFile.ssl_enabled = false;
+   } else if (typeof envFile.ssl_enabled === 'string') {
+      envFile.ssl_enabled = (envFile.ssl_enabled === 'true') ? true : false;
    }
    if (!envFile.clone_branch) {
       envFile.clone_branch = 'master';
@@ -187,6 +198,7 @@ export async function main(): Promise<number> {
 async function install() {
    // =>load all configs
    configs = await loadAllConfig();
+   console.log(projectEnv.ssl_enabled, typeof projectEnv.ssl_enabled)
    // =>check ssl files exist
    if (projectEnv.ssl_enabled && (!fs.existsSync(path.join(sslPath, 'cert.crt')) || !fs.existsSync(path.join(sslPath, 'cert.key')))) {
       LOG.info('generating ssl files ...');
