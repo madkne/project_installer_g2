@@ -1,7 +1,7 @@
 from .development import *
 import os
 
-DEBUG = {{debug_mode}}
+DEBUG = {{'True' if debug_mode else 'False'}}
 
 ALLOWED_HOSTS = ['*', '{{allowed_host}}']
 

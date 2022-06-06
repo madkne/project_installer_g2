@@ -15,10 +15,28 @@ dotenv.config();
 /************************************* */
 type CommandName = 'install' | 'createSuperUser' | 'run-mysql' | 'stop';
 type CommandArgvName = 'non-interactive' | 'level' | 'skip-rebuild-frontend' | 'skip-rebuild-backend' | 'restart_mysql' | 'skip-remove-unused-images' | 'skip-clone-frontend' | 'skip-clone-backend';
-type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'docker_project_name' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'nginx_port' | 'mysql_port' | 'debug_mode' | 'host_name' | 'allowed_host' | 'mysql_password' | 'allow_public_mysql' | 'allow_public_redis' | 'ssl_enabled' | 'env_path' | 'dist_path' | 'clone_branch';
+type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'docker_project_name' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'allowed_host' | 'env_path' | 'dist_path';
 type ConfigsObject = { [k in ConfigVariableKey]: any };
+interface EnvFileStruct {
+   project_name: string;
+   backend_clone_url: string;
+   app_clone_url: string;
+   frontend_core_clone_url: string;
+   django_settings_module_name: string;
+   django_apps_names: string;
+   frontend_core_clone_path: string;
+   domain_name: string;
+   app_subdomain_name: string;
+   mysql_port?: number;
+   debug_mode?: boolean;
+   mysql_password: string;
+   allow_public_mysql?: boolean;
+   allow_public_redis?: boolean;
+   ssl_enabled?: boolean;
+   clone_branch?: string;
+}
 /************************************* */
-const VERSION = '0.5';
+const VERSION = '0.7';
 let configs: ConfigsObject;
 let distPath: string;
 let envPath: string;
@@ -27,22 +45,37 @@ let envHooksPath: string;
 let distBackendProjectPath: string;
 let distFrontendProjectPath: string;
 let dockerComposeCommand: string;
-let projectEnv: {
-   project_name: string;
-   backend_clone_url: string;
-   app_clone_url: string;
-   frontend_core_clone_url: string;
-   django_settings_module_name: string;
-   django_apps_names: string;
-   frontend_core_clone_path: string;
-   frontend_base_url: string;
-   domain_name: string;
-   app_subdomain_name: string;
-};
+let projectEnv: EnvFileStruct;
+
+function loadDefualtEnvVariables() {
+   let envFile: EnvFileStruct = process.env as any;
+   if (!envFile.mysql_port) {
+      envFile.mysql_port = 3306;
+   }
+   if (envFile.debug_mode === undefined) {
+      envFile.debug_mode = true;
+   }
+   if (!envFile.allow_public_mysql == undefined) {
+      envFile.allow_public_mysql = false;
+   }
+   if (!envFile.allow_public_redis == undefined) {
+      envFile.allow_public_redis = false;
+   }
+   if (!envFile.ssl_enabled == undefined) {
+      envFile.ssl_enabled = false;
+   }
+   if (!envFile.clone_branch) {
+      envFile.clone_branch = 'master';
+   }
+   if (!envFile.app_subdomain_name) {
+      envFile.app_subdomain_name = 'app';
+   }
+   return envFile;
+}
 /************************************* */
 export async function main(): Promise<number> {
    LOG.clear();
-   projectEnv = process.env as any;
+   projectEnv = loadDefualtEnvVariables();
    LOG.success(`*** ${projectEnv.project_name} Installer - version ${VERSION} ***`);
    await SET.showStatistics();
 
@@ -150,61 +183,12 @@ export async function main(): Promise<number> {
    return 0;
 }
 /************************************* */
-async function getInteractiveFromUser() {
-   // =>get ssl enabled
-   let sslEnabled = await IN.select(`Is SSL enabled: (default is ${configs.ssl_enabled})`, ['True', 'False'], configs.ssl_enabled ? 'True' : 'False');
-   configs.ssl_enabled = sslEnabled === 'True' ? true : false;
-   await ENV.save('ssl_enabled', configs.ssl_enabled);
-   // =>get nginx port, if ssl disabled
-   if (!configs.ssl_enabled) {
-      let nginxPort = Number(await IN.input(`Enter Nginx port: (default is ${configs.nginx_port})`));
-      if (nginxPort && nginxPort !== NaN) {
-         configs.nginx_port = nginxPort;
-         await ENV.save('nginx_port', configs.nginx_port);
-      }
-   }
-   // =>if ssl enabled, set nginx port
-   else {
-      configs.nginx_port = 443;
-      await ENV.save('nginx_port', configs.nginx_port);
-   }
-   // =>get mysql port
-   let mysqlPort = Number(await IN.input(`Enter Mysql port: (default is ${configs.mysql_port})`));
-   if (mysqlPort && mysqlPort !== NaN) {
-      configs.mysql_port = mysqlPort;
-      await ENV.save('mysql_port', configs.mysql_port);
-   }
-   // =>get host_name
-   let hostName = String(await IN.input(`Enter host_name: (default is ${configs.host_name})`));
-   // =>check host name
-   if (hostName && hostName.trim() !== "") {
-      configs.host_name = hostName;
-      await ENV.save('host_name', configs.host_name);
-      // =>generate allowed host from host name
-      let allowed_host = hostName.split('//').pop();
-      if (allowed_host.endsWith('/')) {
-         allowed_host = allowed_host.slice(0, -1);
-      }
-      configs.allowed_host = allowed_host;
-      await ENV.save('allowed_host', configs.allowed_host);
-   }
-   // =>get clone branch
-   configs.clone_branch = await IN.input(`Enter clone branch (default: ${configs.clone_branch})`, configs.clone_branch);
-   await ENV.save('clone_branch', configs.clone_branch);
-   // =>get debug mode
-   configs.debug_mode = await IN.select(`Is Debug Mode?`, ['True', 'False'], configs.debug_mode);
-   await ENV.save('debug_mode', configs.debug_mode);
-}
 /************************************* */
 async function install() {
    // =>load all configs
    configs = await loadAllConfig();
-   // =>if not interactive, get nginx post
-   if (!ARG.hasArgv<CommandArgvName>('non-interactive')) {
-      let res11 = await getInteractiveFromUser();
-   }
    // =>check ssl files exist
-   if (configs.ssl_enabled && (!fs.existsSync(path.join(sslPath, 'cert.crt')) || !fs.existsSync(path.join(sslPath, 'cert.key')))) {
+   if (projectEnv.ssl_enabled && (!fs.existsSync(path.join(sslPath, 'cert.crt')) || !fs.existsSync(path.join(sslPath, 'cert.key')))) {
       LOG.info('generating ssl files ...');
       let res12 = await OS.shell(`sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ${path.join(sslPath, 'cert.key')} -out ${path.join(sslPath, 'cert.crt')}`, sslPath);
       if (res12 !== 0) {
@@ -240,7 +224,7 @@ async function install() {
       LOG.info('cloning backend project...');
       let res = await GIT.clone({
          cloneUrl: projectEnv.backend_clone_url,
-         branch: configs.clone_branch,
+         branch: projectEnv.clone_branch,
          depth: 1,
          username: configs.git_username,
          password: configs.git_password,
@@ -248,8 +232,8 @@ async function install() {
       LOG.log(res.stderr);
       if (res.code !== 0) return false;
       // =>move from clone branch dir to root dir
-      await OS.copyDirectory(path.join(distBackendProjectPath, configs.clone_branch), distBackendProjectPath);
-      await OS.rmdir(path.join(distBackendProjectPath, configs.clone_branch));
+      await OS.copyDirectory(path.join(distBackendProjectPath, projectEnv.clone_branch), distBackendProjectPath);
+      await OS.rmdir(path.join(distBackendProjectPath, projectEnv.clone_branch));
    }
    // =>if level is 2 or less (clone frontend)
    if (!ARG.hasArgv<CommandArgvName>('skip-clone-frontend') && ARG.getArgv<number>('level') <= 2) {
@@ -261,7 +245,7 @@ async function install() {
       LOG.info('cloning frontend project...');
       let res = await GIT.clone({
          cloneUrl: projectEnv.app_clone_url,
-         branch: configs.clone_branch,
+         branch: projectEnv.clone_branch,
          depth: 1,
          username: configs.git_username,
          password: configs.git_password,
@@ -269,8 +253,8 @@ async function install() {
       LOG.log(res.stderr);
       if (res.code !== 0) return false;
       // =>move from clone branch dir to root dir
-      await OS.copyDirectory(path.join(distFrontendProjectPath, configs.clone_branch), distFrontendProjectPath);
-      await OS.rmdir(path.join(distFrontendProjectPath, configs.clone_branch));
+      await OS.copyDirectory(path.join(distFrontendProjectPath, projectEnv.clone_branch), distFrontendProjectPath);
+      await OS.rmdir(path.join(distFrontendProjectPath, projectEnv.clone_branch));
       // =>clone frontend app
       if (projectEnv.frontend_core_clone_path && projectEnv.frontend_core_clone_url) {
          const distCoreFrontendPath = path.join(distFrontendProjectPath, projectEnv.frontend_core_clone_path);
@@ -278,7 +262,7 @@ async function install() {
          LOG.info('cloning core frontend project...');
          let res1 = await GIT.clone({
             cloneUrl: projectEnv.frontend_core_clone_url,
-            branch: configs.clone_branch,
+            branch: projectEnv.clone_branch,
             depth: 1,
             username: configs.git_username,
             password: configs.git_password,
@@ -289,11 +273,10 @@ async function install() {
             return false;
          }
          // =>move from clone branch dir to root dir
-         await OS.copyDirectory(path.join(distCoreFrontendPath, configs.clone_branch), distCoreFrontendPath);
-         await OS.rmdir(path.join(distCoreFrontendPath, configs.clone_branch));
+         await OS.copyDirectory(path.join(distCoreFrontendPath, projectEnv.clone_branch), distCoreFrontendPath);
+         await OS.rmdir(path.join(distCoreFrontendPath, projectEnv.clone_branch));
       }
-      // =>modify package.json
-      // fs.writeFileSync(path.join(distFrontendProjectPath, 'package.json'), fs.readFileSync(path.join(distFrontendProjectPath, 'package.json')).toString().replace(`"ng build"`, `"ng build --base-href ${projectEnv.frontend_base_url} --deploy-url ${projectEnv.frontend_base_url}"`));
+
    }
    // =>copy backend project settings to hooks dir
    fs.mkdirSync(path.join(distPath, 'hooks', 'app'), { recursive: true });
@@ -378,7 +361,7 @@ async function install() {
    // create system user if not exist
    // await createSystemUser()
 
-   LOG.success(`You can see project on ${configs.host_name}:${configs.nginx_port}`);
+   LOG.success(`You must set '${projectEnv.domain_name}', '${projectEnv.app_subdomain_name}.${projectEnv.domain_name}' domains on '/etc/hosts' file.\nYou can see project on http${projectEnv.ssl_enabled ? 's' : ''}://${projectEnv.domain_name}`);
    return true;
 }
 /************************************* */
@@ -456,10 +439,6 @@ async function loadAllConfig(): Promise<ConfigsObject> {
    let configs = await ENV.loadAll() as ConfigsObject;
    let ConfigVariables: { name: ConfigVariableKey; default?: any }[] = [
       {
-         name: 'clone_branch',
-         default: 'master',
-      },
-      {
          name: 'docker_project_name',
          default: 'project',
       },
@@ -471,46 +450,16 @@ async function loadAllConfig(): Promise<ConfigsObject> {
          name: 'frontend_project_docker_image',
          default: `${projectEnv.project_name}_frontend:production`,
       },
-      {
-         name: 'nginx_port',
-         default: 80,
-      },
-      {
-         name: 'mysql_port',
-         default: 3306,
-      },
-      {
-         name: 'debug_mode',
-         default: 'False',
-      },
-      {
-         name: 'host_name',
-         default: 'http://localhost',
-      },
+
       {
          name: 'allowed_host',
          default: 'localhost',
       },
-      {
-         name: 'mysql_password',
-         default: '123456789',
-      },
+
       {
          name: 'docker_registery',
          default: 'dockerhub.ir',//'docker.io',
       },
-      {
-         name: 'allow_public_mysql',
-         default: false,
-      },
-      {
-         name: 'allow_public_redis',
-         default: false,
-      },
-      {
-         name: 'ssl_enabled',
-         default: false,
-      }
    ];
    // =>set default configs, if not set
    for (const conf of ConfigVariables) {
