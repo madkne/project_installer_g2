@@ -19,12 +19,12 @@ echo "MySQL is up and running"
 
 
 # mysqld --default-authentication-plugin=mysql_native_password
-echo "creating table talent..."
+echo "creating table {{mysql_database_name}}..."
 # mysql -u "root" --password="12345"  -e 'CREATE DATABASE IF NOT EXISTS talent;'
-mysql -u "root" --password="12345"  -e 'CREATE DATABASE IF NOT EXISTS talent;'
+mysql -u "root" --password="12345"  -e 'CREATE DATABASE IF NOT EXISTS {{mysql_database_name}};'
 
-echo "${RED}altering user talent..."
-mysql -u "root" --password="12345" -e "alter user 'root'@'%' identified with mysql_native_password by '12345';"
+echo "${RED}altering user {{mysql_database_name}}..."
+mysql -u "root" --password="{{mysql_root_password}}" -e "alter user 'root'@'%' identified with mysql_native_password by '{{mysql_root_password}}';"
 
 
 # sdRTYfv45@#

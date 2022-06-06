@@ -29,14 +29,15 @@ interface EnvFileStruct {
    app_subdomain_name: string;
    mysql_port?: number;
    debug_mode?: boolean;
-   mysql_password: string;
    allow_public_mysql?: boolean;
    allow_public_redis?: boolean;
    ssl_enabled?: boolean;
    clone_branch?: string;
+   mysql_root_password: string;
+   mysql_database_name: string;
 }
 /************************************* */
-const VERSION = '0.7';
+const VERSION = '0.8';
 let configs: ConfigsObject;
 let distPath: string;
 let envPath: string;
@@ -198,7 +199,6 @@ export async function main(): Promise<number> {
 async function install() {
    // =>load all configs
    configs = await loadAllConfig();
-   console.log(projectEnv.ssl_enabled, typeof projectEnv.ssl_enabled)
    // =>check ssl files exist
    if (projectEnv.ssl_enabled && (!fs.existsSync(path.join(sslPath, 'cert.crt')) || !fs.existsSync(path.join(sslPath, 'cert.key')))) {
       LOG.info('generating ssl files ...');
@@ -290,6 +290,11 @@ async function install() {
       }
 
    }
+   // =>create hook dirs
+   let hookDirs = ['mysql', 'nginx', 'nginx/conf', 'app', 'app/settings', 'caddy'];
+   for (const d of hookDirs) {
+      fs.mkdirSync(path.join(distPath, 'hooks', d), { recursive: true });
+   }
    // =>copy backend project settings to hooks dir
    fs.mkdirSync(path.join(distPath, 'hooks', 'app'), { recursive: true });
    await OS.copyDirectory(path.join(distPath, 'hooks', 'app', 'settings'), path.join(distBackendProjectPath, projectEnv.django_settings_module_name + '/settings'));
@@ -300,7 +305,6 @@ async function install() {
       await TEM.saveRenderFile(path.join(envPath, f), distPath, { data: { ...configs, ...projectEnv }, noCache: true });
    }
    // =>render hooks
-   let hookDirs = ['mysql', 'nginx', 'nginx/conf', 'app', 'app/settings', 'caddy'];
    let hookFiles = [
       'mysql/init.sql',
       'nginx/uwsgi_params',
@@ -309,14 +313,12 @@ async function install() {
       'app/front/configs.js',
       'caddy/Caddyfile',
    ];
-   for (const d of hookDirs) {
-      fs.mkdirSync(path.join(distPath, 'hooks', d), { recursive: true });
-   }
+
    // console.log({ ...configs, ...projectEnv })
    for (const f of hookFiles) {
       await TEM.saveRenderFile(path.join(envHooksPath, f), path.dirname(path.join(distPath, 'hooks', f)), { data: { ...configs, ...projectEnv }, noCache: true });
    }
-   // =>get list of apps of talent
+   // =>get list of apps of project
    // this apps should make migrations first, because of dependency
    let appsList = projectEnv.django_apps_names.split(',');
    // add other apps

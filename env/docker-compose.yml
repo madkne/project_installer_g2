@@ -9,8 +9,8 @@ services:
     ports:
       - "{{'' if allow_public_mysql else '127.0.0.1:'}}{{mysql_port}}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: '{{mysql_password}}'
-      MYSQL_DATABASE: 'talent'
+      MYSQL_ROOT_PASSWORD: '{{mysql_root_password}}'
+      MYSQL_DATABASE: '{{mysql_database_name}}'
       HOSTNAME: 'mysql'
       MYSQL_TCP_PORT: {{mysql_port}}
     restart: unless-stopped
@@ -35,7 +35,7 @@ services:
     volumes:
       - ./data/static:/app/staticfiles
       - ./data/media:/app/media
-      - ./hooks/app/settings/:/app/talent/settings
+      - ./hooks/app/settings/production.py:/app/{{django_settings_module_name}}/settings/production.py
       - ./data/mysql_backups/:/app/backups
     #   - ./data/app:/app/:ro
 
@@ -43,7 +43,7 @@ services:
       - "127.0.0.1:8000:8000"
     # entrypoint: /bin/bash ./docker_entrypoints/app.sh
     environment:
-      DJANGO_SETTINGS_MODULE: talent.settings.production
+      DJANGO_SETTINGS_MODULE: {{django_settings_module_name}}.settings.production
       UWSGI_WORKERS: 1
       DATABASE_HOST: mysql
     restart: unless-stopped

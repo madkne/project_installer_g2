@@ -15,10 +15,10 @@ os.environ.setdefault('DATABASE_HOST', 'mysql')
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'talent',
+        'NAME': '{{mysql_database_name}}',
         'USER': 'root',
         # 'PASSWORD': 'sdRTYfv45@#',
-        'PASSWORD': '{{mysql_password}}',
+        'PASSWORD': '{{mysql_root_password}}',
         'HOST': os.environ['DATABASE_HOST'],
         'PORT': '{{mysql_port}}',
         'OPTIONS': {
