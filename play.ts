@@ -37,7 +37,7 @@ interface EnvFileStruct {
    mysql_database_name: string;
 }
 /************************************* */
-const VERSION = '0.8';
+const VERSION = '0.9';
 let configs: ConfigsObject;
 let distPath: string;
 let envPath: string;
@@ -306,10 +306,11 @@ async function install() {
    }
    // =>render hooks
    let hookFiles = [
-      'mysql/init.sql',
+      // 'mysql/init.sql',
       'nginx/uwsgi_params',
       'nginx/conf/nginx.conf',
       'app/settings/production.py',
+      'nginx/front_nginx.conf',
       'app/front/configs.js',
       'caddy/Caddyfile',
    ];

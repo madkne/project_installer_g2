@@ -23,7 +23,7 @@ services:
       timeout: 2s
       retries: 30
     volumes:
-      - ./data/mysql:/var/lib/mysql
+      - mysqldb:/var/lib/mysql
       - ./hooks/mysql:/docker-entrypoint-initdb.d
     depends_on:
       - redis
@@ -135,3 +135,7 @@ services:
 # networks:
 #   project_net:
 #     driver: bridge
+
+volumes:
+  mysqldb:
+    driver: local
