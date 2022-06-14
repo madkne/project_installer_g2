@@ -5,7 +5,7 @@ DEBUG = {{'True' if debug_mode else 'False'}}
 
 ALLOWED_HOSTS = ['*', '{{allowed_host}}']
 
-HOST_NAME = '{{host_name}}'
+HOST_NAME = '{{domain_name}}'
 
 SERVER_MODE = 'cloud'  # cloud or local
 
@@ -43,6 +43,7 @@ STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
 #         "TIMEOUT": 300,
 #     }
 # }
+CORS_ALLOWED_ORIGINS = ['http://{{app_subdomain_name}}.{{domain_name}}']
 CACHE_TTL = 300  # 5 minutes
 #  # Security
 # SESSION_COOKIE_SECURE = True
