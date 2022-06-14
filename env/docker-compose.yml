@@ -78,19 +78,31 @@ services:
   caddy:
     image: {{docker_registery}}/caddy:2.3.0
     restart: unless-stopped
+    # ports:
+    #   - "80:80"
     ports:
+      {% if ssl_enabled %}
       - "80:80"
+      - "443:443"
+      {% else %}
+      - "80:80"
+      {% endif %}
       
     volumes:
       - ./hooks/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      {% if ssl_enabled %}
+      - ./ssl:/etc/cert/
+      {% endif %}
       
   nginx:
     image: {{docker_registery}}/nginx:stable
     restart: unless-stopped
     # container_name: talent_nginx
     # ports:
-    #   - "{{nginx_port}}:{{nginx_port}}"
     #   {% if ssl_enabled %}
+    #   - "80:80"
+    #   - "443:443"
+    #   {% else %}
     #   - "80:80"
     #   {% endif %}
     volumes:

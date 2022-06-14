@@ -14,7 +14,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 /************************************* */
 type CommandName = 'install' | 'createSuperUser' | 'run-mysql' | 'stop';
-type CommandArgvName = 'non-interactive' | 'level' | 'skip-rebuild-frontend' | 'skip-rebuild-backend' | 'restart_mysql' | 'skip-remove-unused-images' | 'skip-clone-frontend' | 'skip-clone-backend';
+type CommandArgvName = 'non-interactive' | 'level' | 'skip-rebuild-frontend' | 'skip-rebuild-backend' | 'restart_mysql' | 'skip-remove-unused-images' | 'skip-clone-frontend' | 'skip-clone-backend' | 'remove';
 type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'allowed_host' | 'env_path' | 'dist_path';
 type ConfigsObject = { [k in ConfigVariableKey]: any };
 interface EnvFileStruct {
@@ -35,9 +35,10 @@ interface EnvFileStruct {
    clone_branch?: string;
    mysql_root_password: string;
    mysql_database_name: string;
+   api_base_url: string;
 }
 /************************************* */
-const VERSION = '0.9';
+const VERSION = '0.13';
 let configs: ConfigsObject;
 let distPath: string;
 let envPath: string;
@@ -49,38 +50,32 @@ let dockerComposeCommand: string;
 let projectEnv: EnvFileStruct;
 
 function loadDefualtEnvVariables() {
-   let envFile: EnvFileStruct = process.env as any;
-   // if (typeof envFile.ssl_enabled === 'string') {
-   //    envFile.ssl_enabled = Boolean(envFile.ssl_enabled);
-   // }
+   let envFile: EnvFileStruct = JSON.parse(JSON.stringify(process.env));
    if (!envFile.mysql_port) {
       envFile.mysql_port = 3306;
    }
    if (envFile.debug_mode === undefined) {
       envFile.debug_mode = true;
-   } else if (typeof envFile.debug_mode === 'string') {
-      envFile.debug_mode = (envFile.debug_mode === 'true') ? true : false;
    }
    if (envFile.allow_public_mysql == undefined) {
       envFile.allow_public_mysql = false;
-   } else if (typeof envFile.allow_public_mysql === 'string') {
-      envFile.allow_public_mysql = (envFile.allow_public_mysql === 'true') ? true : false;
    }
    if (envFile.allow_public_redis == undefined) {
       envFile.allow_public_redis = false;
-   } else if (typeof envFile.allow_public_redis === 'string') {
-      envFile.allow_public_redis = (envFile.allow_public_redis === 'true') ? true : false;
    }
    if (envFile.ssl_enabled == undefined) {
       envFile.ssl_enabled = false;
-   } else if (typeof envFile.ssl_enabled === 'string') {
-      envFile.ssl_enabled = (envFile.ssl_enabled === 'true') ? true : false;
    }
    if (!envFile.clone_branch) {
       envFile.clone_branch = 'master';
    }
    if (!envFile.app_subdomain_name) {
       envFile.app_subdomain_name = 'app';
+   }
+   for (const key of Object.keys(envFile)) {
+      try {
+         envFile[key] = JSON.parse(envFile[key]);
+      } catch (e) { }
    }
    // console.log(envFile)
    return envFile;
@@ -130,21 +125,21 @@ export async function main(): Promise<number> {
                type: 'boolean',
             },
             {
-               name: 'skip-remove-unused-images',
-               alias: 's3',
-               description: `skip to remove unused docker images`,
-               type: 'boolean',
-            },
-            {
                name: 'skip-clone-frontend',
-               alias: 's4',
+               alias: 's3',
                description: `skip to clone frontend app`,
                type: 'boolean',
             },
             {
                name: 'skip-clone-backend',
-               alias: 's5',
+               alias: 's4',
                description: `skip to clone backend app`,
+               type: 'boolean',
+            },
+            {
+               name: 'skip-remove-unused-images',
+               alias: 's5',
+               description: `skip to remove unused docker images`,
                type: 'boolean',
             },
             {
@@ -178,11 +173,11 @@ export async function main(): Promise<number> {
             //    alias: 's',
             //    description: 'service that want to stop it',
             // },
-            // {
-            //    name: 'remove',
-            //    alias: 'r',
-            //    description: 'remove container',
-            // },
+            {
+               name: 'remove',
+               alias: 'r',
+               description: 'remove container',
+            },
          ],
       },
    ]);
@@ -263,7 +258,7 @@ async function install() {
       // =>move from clone branch dir to root dir
       await OS.copyDirectory(path.join(distFrontendProjectPath, projectEnv.clone_branch), distFrontendProjectPath);
       await OS.rmdir(path.join(distFrontendProjectPath, projectEnv.clone_branch));
-      // =>clone frontend app
+      // =>clone core frontend app
       if (projectEnv.frontend_core_clone_path && projectEnv.frontend_core_clone_url) {
          const distCoreFrontendPath = path.join(distFrontendProjectPath, projectEnv.frontend_core_clone_path);
          fs.mkdirSync(distCoreFrontendPath, { recursive: true });
@@ -284,21 +279,17 @@ async function install() {
          await OS.copyDirectory(path.join(distCoreFrontendPath, projectEnv.clone_branch), distCoreFrontendPath);
          await OS.rmdir(path.join(distCoreFrontendPath, projectEnv.clone_branch));
       }
+      // =>set base url on env prod of frontend
+      fs.writeFileSync(path.join(distFrontendProjectPath, 'src', 'environments', 'environment.prod.ts'), `export const environment = {
+         production: true,
+         baseUrl: '${projectEnv.api_base_url}',
+       };`);
 
    }
    // =>create hook dirs
    let hookDirs = ['mysql', 'nginx', 'nginx/conf', 'app', 'app/settings', 'caddy'];
    for (const d of hookDirs) {
       fs.mkdirSync(path.join(distPath, 'hooks', d), { recursive: true });
-   }
-   // =>copy backend project settings to hooks dir
-   fs.mkdirSync(path.join(distPath, 'hooks', 'app'), { recursive: true });
-   await OS.copyDirectory(path.join(distPath, 'hooks', 'app', 'settings'), path.join(distBackendProjectPath, projectEnv.django_settings_module_name + '/settings'));
-
-   // =>render root files
-   let files = ['backend_Dockerfile', 'frontend_Dockerfile', 'docker-compose.yml', '.dockerignore'];
-   for (const f of files) {
-      await TEM.saveRenderFile(path.join(envPath, f), distPath, { data: { ...configs, ...projectEnv }, noCache: true });
    }
    // =>render hooks
    let hookFiles = [
@@ -315,6 +306,16 @@ async function install() {
    for (const f of hookFiles) {
       await TEM.saveRenderFile(path.join(envHooksPath, f), path.dirname(path.join(distPath, 'hooks', f)), { data: { ...configs, ...projectEnv }, noCache: true });
    }
+   // =>copy backend project settings to hooks dir
+   fs.mkdirSync(path.join(distPath, 'hooks', 'app'), { recursive: true });
+   await OS.copyDirectory(path.join(distPath, 'hooks', 'app', 'settings'), path.join(distBackendProjectPath, projectEnv.django_settings_module_name + '/settings'));
+
+   // =>render root files
+   let files = ['backend_Dockerfile', 'frontend_Dockerfile', 'docker-compose.yml', '.dockerignore'];
+   for (const f of files) {
+      await TEM.saveRenderFile(path.join(envPath, f), distPath, { data: { ...configs, ...projectEnv }, noCache: true });
+   }
+
    // =>get list of apps of project
    // this apps should make migrations first, because of dependency
    let appsList = projectEnv.django_apps_names.split(',');
