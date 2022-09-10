@@ -11,7 +11,10 @@ FROM {{docker_registery}}/node:14.15-alpine AS build
 # when we change our application's nodejs dependencies:
 # COPY {{project_name}}_frontend/package.json ./
 COPY {{project_name}}_frontend/package.json /tmp/package.json
-RUN cd /tmp && npm install -f --prod && npm i --save-dev @angular-devkit/build-angular@13.3.7 && npm audit fix --force
+#RUN cd /tmp && npm install -f --prod && npm i --save-dev @angular-devkit/build-angular@13.3.7 && npm audit fix --force
+
+RUN cd /tmp && npm install -f --prod && npm i --save-dev @angular-devkit/build-angular@13.3.7 && npm i -g @angular/cli@13.3.9
+
 RUN mkdir -p /usr/src/app && cp -a /tmp/node_modules /usr/src/app/
 # RUN npm install -f --prod
 # RUN npm install --save-dev @angular-devkit/build-angular

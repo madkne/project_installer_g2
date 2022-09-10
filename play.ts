@@ -283,6 +283,7 @@ async function install() {
       fs.writeFileSync(path.join(distFrontendProjectPath, 'src', 'environments', 'environment.prod.ts'), `export const environment = {
          production: true,
          baseUrl: '${projectEnv.api_base_url}',
+	 djangoUrl: '${projectEnv.django_base_url}',
        };`);
 
    }
