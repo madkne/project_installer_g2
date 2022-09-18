@@ -20,7 +20,7 @@ import { loadAllConfig } from "./src/common";
 // type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'allowed_host' | 'env_path' | 'dist_path';
 // type ConfigsObject = { [k in ConfigVariableKey]: any };
 /************************************* */
-const VERSION = '0.35';
+const VERSION = '0.36';
 // let configs: ConfigsObject;
 // let distPath: string;
 // let envPath: string;
