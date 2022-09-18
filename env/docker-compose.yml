@@ -1,79 +1,71 @@
 version: "3.9"
 
 services:
-  mysql:
-    # container_name: talent_mysql
-    # command: mysqld --character-set-server=utf8 --collation-server=utf8_general_ci
-    command: mysqld --default-authentication-plugin=mysql_native_password --character-set-server=utf8 --collation-server=utf8_general_ci
-    image: {{docker_registery}}/mysql:8.0
+{% for db in databases %}
+  {{db.name}}:
+    {% if db.command %}
+    command: {{db.command}}
+    {% endif %}
+    image: {{docker_registery}}/{{db.image}}
     ports:
-      - "{{'' if allow_public_mysql else '127.0.0.1:'}}{{mysql_port}}:3306"
+      - "{{'' if db.allow_public_db else '127.0.0.1:'}}{{db.port}}:{{db.realPort}}"
+    {% if db.__has_envs %}
     environment:
-      MYSQL_ROOT_PASSWORD: '{{mysql_root_password}}'
-      MYSQL_DATABASE: '{{mysql_database_name}}'
-      HOSTNAME: 'mysql'
-      MYSQL_TCP_PORT: {{mysql_port}}
+      {% for key, val in db.envs %}{{key}}: '{{val}}' 
+      {% endfor %}
+    {% endif %}
     restart: unless-stopped
     # networks:
     #   project_net:
     #     aliases:
     #       - mysql
+    {% if db.healthcheck %}
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      timeout: 2s
-      retries: 30
+      test: {{db.healthcheck.test | safe}}
+      timeout: {{db.healthcheck.timeout}}s
+      retries: {{db.healthcheck.retries}}
+    {% endif %}
+    {% if db.volumes.length > 0 %}
     volumes:
-      - mysqldb:/var/lib/mysql
-      - ./hooks/mysql:/docker-entrypoint-initdb.d
-    depends_on:
-      - redis
+      {% for vol in db.volumes %}- {{vol}}
+      {% endfor %}
+    {% endif %}
+      # - ./hooks/mysql:/docker-entrypoint-initdb.d
 
+{% endfor %}
 
-  backend_app:
-    image: {{backend_project_docker_image}}
-    # container_name: talent_app
+{% for domain in sub_domains %}
+  {{domain.name}}_app:
+    image: {{project_name}}_{{domain.name}}
+    {% if domain.volumes.length > 0 %}
     volumes:
-      - ./data/static:/app/staticfiles
-      - ./data/media:/app/media
-      - ./hooks/app/settings/production.py:/app/{{django_settings_module_name}}/settings/production.py
-      - ./data/mysql_backups/:/app/backups
-    #   - ./data/app:/app/:ro
-
+      {% for vol in domain.volumes %}- {{vol}}
+      {% endfor %}
+    {% endif %}
     ports:
-      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:{{domain.exposePort}}:{{domain.port}}"
     # entrypoint: /bin/bash ./docker_entrypoints/app.sh
+    {% if domain.__hasEnvs %}
     environment:
-      DJANGO_SETTINGS_MODULE: {{django_settings_module_name}}.settings.production
-      UWSGI_WORKERS: 1
-      DATABASE_HOST: mysql
+      {% for key, val in domain.envs %}{{key}}: {% if val is string %} '{{val}}' {% else %} {{val}} {% endif %}
+      {% endfor %}
+    {% endif %}
     restart: unless-stopped
+    {% if domain.depends.length > 0 %}
     links:
-      - mysql
+      {% for link in domain.depends %}- {{link}}
+      {% endfor %}
     depends_on:
-      mysql:
+      {% for link in domain.depends %}{{link}}:
         # condition: service_completed_successfully
         condition: service_healthy
+      {% endfor %}
+    {% endif %}
     # networks:
     #   project_net:
     #     aliases:
     #       - backend_app
-
-  frontend_app:
-    image: {{frontend_project_docker_image}}
-    # container_name: talent_app
-    volumes:
-      - ./hooks/app/front/configs.js:/usr/share/nginx/html/assets/js/configs.js:ro
-
-    ports:
-      - "8081:80"
-    # entrypoint: /bin/bash ./docker_entrypoints/app.sh
-    restart: unless-stopped
-    # networks:
-    #   project_net:
-    #     aliases:
-    #       - frontend_app
-    # - expose:
-    #   - 8001
+{% endfor %}
   # Web proxy for SSL termination
   caddy:
     image: {{docker_registery}}/caddy:2.3.0
@@ -122,32 +114,11 @@ services:
           - "{{domain_name}}"
 
     depends_on:
-      - backend_app
-      - frontend_app
-    # networks:
-    #   project_net:
-    #     aliases:
-    #       - nginx
+      {%for sub in sub_domains %}- {{sub.name}}_app
+      {% endfor %}
 
 
 
-  redis:
-    image: {{docker_registery}}/redis:alpine
-    restart: unless-stopped
-    # container_name: talent_redis
-    ports:
-      - "{{'' if allow_public_redis else '127.0.0.1:'}}6379:6379"
-
-    # networks:
-    #   talent:
-    #     aliases:
-    #       - nginx
-
-
-# networks:
-#   project_net:
-#     driver: bridge
-
-volumes:
-  mysqldb:
-    driver: local
+# volumes:
+#   mysqldb:
+#     driver: local

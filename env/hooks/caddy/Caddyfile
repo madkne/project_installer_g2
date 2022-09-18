@@ -1,29 +1,19 @@
 {
-    default_sni {{domain_name}}
-    http_port 80
-    {% if ssl_enabled %}
-    https_port 443
-    {% endif %}
-    email admin@gmail.com
- }
-
-{{domain_name}}, www.{{domain_name}} {
-    tls /etc/cert/cert.crt /etc/cert/cert.key
-    reverse_proxy nginx:{{'443' if ssl_enabled else '80'}} {
-        header_up X-Forwarded-Port {{'443' if ssl_enabled else '80'}}
-        transport http {
-            tls_insecure_skip_verify
-        }
-    }
+default_sni {{domain_name}}
+http_port 80
+{% if ssl_enabled %}
+https_port 443
+{% endif %}
+email admin@gmail.com
 }
-app.{{domain_name}}, www.app.{{domain_name}}  {
-    tls /etc/cert/cert.crt /etc/cert/cert.key
-    reverse_proxy nginx:{{'443' if ssl_enabled else '80'}} {
-        transport http {
-            tls_insecure_skip_verify
-        }
-    }
+{% for sub in sub_domains %}
+{{ sub.subdomain + '.' if sub.subdomain.length > 0 else ''}}{{domain_name}}, www.{{sub.subdomain + '.' if
+sub.subdomain.length > 0 else ''}}{{domain_name}} {
+tls /etc/cert/cert.crt /etc/cert/cert.key
+reverse_proxy nginx:{{'443' if ssl_enabled else '80'}} {
+transport http {
+tls_insecure_skip_verify
 }
-
-
-
+}
+}
+{% endfor %}
