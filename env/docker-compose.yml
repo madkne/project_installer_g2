@@ -42,6 +42,9 @@ services:
       {% for vol in domain.volumes %}- {{vol}}
       {% endfor %}
     {% endif %}
+    {% if domain.hostname %}
+    hostname: '{{domain.hostname}}'
+    {% endif %}
     ports:
       - "127.0.0.1:{{domain.exposePort}}:{{domain.port}}"
     # entrypoint: /bin/bash ./docker_entrypoints/app.sh
