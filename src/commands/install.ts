@@ -49,14 +49,14 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             {
                 name: 'skip-clone-projects',
                 alias: 's2',
-                description: 'skip to clone all projects',
-                type: 'boolean',
+                description: 'skip to clone all or specific projects (like * or app1,app2)',
+                type: 'string',
             },
             {
                 name: 'skip-build-projects',
                 alias: 's3',
-                description: 'skip to build dockerfile of all projects',
-                type: 'boolean',
+                description: 'skip to build dockerfile of all or specific projects (like * or app1,app2)',
+                type: 'string',
             },
             {
                 name: 'remove-containers',
@@ -127,13 +127,19 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         await this.normalizeDatabases();
         // =>render docker compose
         await TEM.saveRenderFile(path.join(this.configs.env_path, 'docker-compose.yml'), path.join(this.configs.dist_path), { data: this.configs, noCache: true });
+        let skipBuildProjects = [];
+        if (this.hasArgv('skip-build-projects')) {
+            skipBuildProjects = this.getArgv('skip-build-projects') ? this.getArgv('skip-build-projects').split(',') : ['*'];
+        }
+
         // =>iterate projects
         for (const subdomain of loadSubDomains(this.configs)) {
             let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
-            // =>run 'beforeBuild' function
-            await this.runProjectConfigsJsFile(subdomain.name, 'beforeBuild');
-            // =>build docker file
-            if (!this.hasArgv('skip-build-projects')) {
+            // =>check if allowed to clone project
+            if (!skipBuildProjects.includes('*') && !skipBuildProjects.includes(subdomain.name)) {
+                // =>run 'beforeBuild' function
+                await this.runProjectConfigsJsFile(subdomain.name, 'beforeBuild');
+                // =>build docker file
                 LOG.info(`building Dockerfile of ${subdomain.name} ...`);
                 await OS.shell(`sudo docker build -t ${this.configs.project_name}_${subdomain.name} --network=host -f ${this.configs.dockerfiles_path}/${subdomain.name}_Dockerfile .`, clonePath);
             }
@@ -192,7 +198,12 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             }
             // clone project in dist folder
             let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
-            if (!this.hasArgv('skip-clone-projects')) {
+            let skipCloneProjects = [];
+            if (this.hasArgv('skip-clone-projects')) {
+                skipCloneProjects = this.getArgv('skip-clone-projects') ? this.getArgv('skip-clone-projects').split(',') : ['*'];
+            }
+            // =>check if allowed to clone project
+            if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
                 await OS.rmdir(clonePath);
                 fs.mkdirSync(clonePath, { recursive: true });
                 LOG.info(`cloning ${subdomain.name} project...`);
@@ -208,11 +219,12 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 // =>move from clone branch dir to root dir
                 await OS.copyDirectory(path.join(clonePath, subdomain.branch), clonePath);
                 await OS.rmdir(path.join(clonePath, subdomain.branch));
-            }
-            // =>run 'prod.config.js' if exist
-            if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
-                this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
-                await this.runProjectConfigsJsFile(subdomain.name, 'init');
+
+                // =>run 'prod.config.js' if exist
+                if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
+                    this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
+                    await this.runProjectConfigsJsFile(subdomain.name, 'init');
+                }
             }
             // =>render docker file of project
             let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: this.configs, noCache: true });
@@ -268,6 +280,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 db.realPort = 27017;
                 db.healthcheck = {
                     test: `["CMD","mongo", "--eval", "db.adminCommand('ping')"]`,
+                    //test: `echo 'db.runCommand("ping").ok' | mongo localhost:${db.port}/${db.dbname} --quiet`,
                     timeout: 1,
                     retries: 30,
                 };
