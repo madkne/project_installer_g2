@@ -1,21 +1,24 @@
-import { ConfigsObject, ConfigVariableKey, SubDomain } from "./types";
+import { ConfigMode, ConfigsObject, ConfigVariableKey, SubDomain } from "./types";
 import * as ENV from '@dat/lib/env';
 import * as LOG from '@dat/lib/log';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as OS from '@dat/lib/os';
+import * as TEM from '@dat/lib/template';
 
-export async function loadAllConfig(): Promise<ConfigsObject> {
+export async function loadAllConfig(mode: ConfigMode = 'prod'): Promise<ConfigsObject> {
     let configs = await ENV.loadAll() as ConfigsObject;
     // =>read .env.json file
+    let envPath = path.join(await OS.cwd(), '.env.' + mode + '.json');
     try {
-        let envFile = JSON.parse(fs.readFileSync(path.join(await OS.cwd(), '.env.json')).toString()) as ConfigsObject;
+        let envFile = JSON.parse(fs.readFileSync(envPath).toString()) as ConfigsObject;
         // =>merge env contents to configs
         for (const key of Object.keys(envFile)) {
             configs[key] = envFile[key];
         }
     } catch (e) {
-        LOG.errorStatus("fix '.env.json' file");
+        LOG.errorStatus(`fix '.env.${mode}.json' file`);
+        console.error(e);
         process.exit(1);
     }
 
@@ -50,7 +53,21 @@ export async function loadAllConfig(): Promise<ConfigsObject> {
     configs.dockerfiles_path = path.join(configs.dist_path, 'dockerfiles');
     fs.mkdirSync(configs.dockerfiles_path, { recursive: true });
     configs.docker_compose_command = `sudo docker-compose -f ${path.join(configs.dist_path, 'docker-compose.yml')} --project-name ${configs.project_name}`;
-    //console.log('configs:', configs)
+    // =>replace variables
+
+    configs = await advancedLoadConfigs(configs, envPath) as any;
+    // console.log('configs:', configs)
+    return configs;
+}
+
+async function advancedLoadConfigs(configs: object, envPath: string) {
+    let newConfigs = await TEM.renderString(fs.readFileSync(envPath).toString(), { data: configs });
+
+    let newConfigsJson = JSON.parse(newConfigs.data);
+    for (const key of Object.keys(newConfigsJson)) {
+        configs[key] = newConfigsJson[key];
+    }
+
     return configs;
 }
 

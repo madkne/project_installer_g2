@@ -34,6 +34,13 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     get argvs(): CommandArgvItem<CommandArgvName>[] {
         return [
             {
+                name: 'environment',
+                alias: 'env',
+                description: 'set specific environment',
+                type: 'string',
+                defaultValue: 'prod',
+            },
+            {
                 name: 'skip-remove-unused-images',
                 alias: 's1',
                 description: 'skip remove unused images',
@@ -62,7 +69,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     /**************************** */
     async implement(): Promise<boolean> {
         // =>load all configs
-        this.configs = await loadAllConfig();
+        this.configs = await loadAllConfig(this.getArgv('environment'));
+        LOG.info(`install in '${this.getArgv('environment')}' mode ...`);
         // =>check ssl files exist
         if (this.configs.ssl_enabled && (!fs.existsSync(path.join(this.configs.ssl_path, 'cert.crt')) || !fs.existsSync(path.join(this.configs.ssl_path, 'cert.key')))) {
             LOG.info('generating ssl files ...');
