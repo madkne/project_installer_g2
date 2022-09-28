@@ -202,6 +202,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (this.hasArgv('skip-clone-projects')) {
                 skipCloneProjects = this.getArgv('skip-clone-projects') ? this.getArgv('skip-clone-projects').split(',') : ['*'];
             }
+            // =>load 'prod.config.js' if exist
+            if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
+                this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
+            }
             // =>check if allowed to clone project
             if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
                 await OS.rmdir(clonePath);
@@ -219,12 +223,9 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 // =>move from clone branch dir to root dir
                 await OS.copyDirectory(path.join(clonePath, subdomain.branch), clonePath);
                 await OS.rmdir(path.join(clonePath, subdomain.branch));
+                // =>run init command
+                await this.runProjectConfigsJsFile(subdomain.name, 'init');
 
-                // =>run 'prod.config.js' if exist
-                if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
-                    this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
-                    await this.runProjectConfigsJsFile(subdomain.name, 'init');
-                }
             }
             // =>render docker file of project
             let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: this.configs, noCache: true });

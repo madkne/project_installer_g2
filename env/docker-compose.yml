@@ -45,6 +45,12 @@ services:
     {% if domain.hostname %}
     hostname: '{{domain.hostname}}'
     {% endif %}
+    {% if domain.hosts %}
+    extra_hosts:
+      {% for host in domain.hosts %}
+      - {{host}}
+      {% endfor %}
+    {% endif %}
     ports:
       - "127.0.0.1:{{domain.exposePort}}:{{domain.port}}"
     # entrypoint: /bin/bash ./docker_entrypoints/app.sh
