@@ -202,10 +202,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (this.hasArgv('skip-clone-projects')) {
                 skipCloneProjects = this.getArgv('skip-clone-projects') ? this.getArgv('skip-clone-projects').split(',') : ['*'];
             }
-            // =>load 'prod.config.js' if exist
-            if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
-                this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
-            }
+
             // =>check if allowed to clone project
             if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
                 await OS.rmdir(clonePath);
@@ -223,6 +220,13 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 // =>move from clone branch dir to root dir
                 await OS.copyDirectory(path.join(clonePath, subdomain.branch), clonePath);
                 await OS.rmdir(path.join(clonePath, subdomain.branch));
+            }
+            // =>load 'prod.config.js' if exist
+            if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
+                this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
+            }
+            // =>check if allowed to clone project
+            if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
                 // =>run init command
                 await this.runProjectConfigsJsFile(subdomain.name, 'init');
 
@@ -285,18 +289,25 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     timeout: 1,
                     retries: 30,
                 };
+                if (db.port !== 27017) {
+                    db.command = `mongod --port ${db.port}`;
+                    db.realPort = db.port;
+                }
                 if (!db.volumes) {
                     db.volumes = [
-                        './data/mongo_db:/data/db'
+                        `./data/mongo_db/${db.name}:/data/db`
                     ];
                 }
 
                 db.envs = {
                     TZ: db.timezone,
-                    MONGO_INITDB_ROOT_USERNAME: 'root',
-                    MONGO_INITDB_ROOT_PASSWORD: db.root_password,
+
                     MONGO_INITDB_DATABASE: db.dbname,
                 };
+                if (db.root_password) {
+                    db.envs['MONGO_INITDB_ROOT_USERNAME'] = 'root';
+                    db.envs['MONGO_INITDB_ROOT_PASSWORD'] = db.root_password;
+                }
             }
             if (db.envs) {
                 db.__has_envs = true;

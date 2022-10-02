@@ -53,7 +53,6 @@ services:
     {% endif %}
     ports:
       - "127.0.0.1:{{domain.exposePort}}:{{domain.port}}"
-    # entrypoint: /bin/bash ./docker_entrypoints/app.sh
     {% if domain.__hasEnvs %}
     environment:
       {% for key, val in domain.envs %}{{key}}: {% if val is string %} '{{val}}' {% else %} {{val}} {% endif %}
@@ -66,14 +65,9 @@ services:
       {% endfor %}
     depends_on:
       {% for link in domain.depends %}{{link}}:
-        # condition: service_completed_successfully
         condition: service_healthy
       {% endfor %}
     {% endif %}
-    # networks:
-    #   project_net:
-    #     aliases:
-    #       - backend_app
 {% endfor %}
   # Web proxy for SSL termination
   caddy:

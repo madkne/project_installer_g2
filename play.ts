@@ -11,7 +11,7 @@ import { InstallCommand } from "./src/commands/install";
 import { loadAllConfig } from "./src/common";
 
 /************************************* */
-const VERSION = '0.42';
+const VERSION = '0.44';
 
 /************************************* */
 export async function main(): Promise<number> {
