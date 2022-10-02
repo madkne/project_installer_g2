@@ -9,9 +9,10 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { InstallCommand } from "./src/commands/install";
 import { loadAllConfig } from "./src/common";
+import { StopCommand } from "./src/commands/stop";
 
 /************************************* */
-const VERSION = '0.44';
+const VERSION = '0.46';
 
 /************************************* */
 export async function main(): Promise<number> {
@@ -22,6 +23,7 @@ export async function main(): Promise<number> {
 
    await ARG.cli();
    InstallCommand
+   StopCommand
 
 
    return 0;

@@ -82,16 +82,26 @@ export async function stopContainers(names?: string[], isRemove = false, configs
         configs = await loadAllConfig();
     }
     if (names) {
-        //TODO:
+        LOG.info(`Stopping '${names.join(', ')}' Services...`);
+        for (const name of names) {
+            // =>if remove container
+            if (isRemove && await OS.shell(`${configs.docker_compose_command} stop ${name}`, configs.dist_path) !== 0) {
+                return false;
+            }
+            // =>if just stop
+            else {
+                if (!isRemove && await OS.shell(`${configs.docker_compose_command} rm -s ${name}`, configs.dist_path) !== 0) return false;
+            }
+        }
     } else {
-        LOG.info('Stopping Services...');
+        LOG.info('Stopping All Services...');
         // =>if remove container
         if (isRemove && await OS.shell(`${configs.docker_compose_command} down --remove-orphans`, configs.dist_path) !== 0) {
             return false;
         }
         // =>if just stop
         else {
-            if (!isRemove && await OS.shell(`${configs.docker_compose_command} stop `, configs.dist_path) !== 0) return false;
+            if (!isRemove && await OS.shell(`${configs.docker_compose_command} rm -s `, configs.dist_path) !== 0) return false;
         }
 
         return true;
