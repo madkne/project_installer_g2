@@ -1,5 +1,6 @@
-# Dadgam Installer
-	clone, build, and run Dadgam project
+# Project Installer
+
+clone, build, and run the project with nginx and caddy on multiple sub domains on ONE server
 	
 ## Requirements
  - docker
@@ -7,20 +8,14 @@
  - node 12 or higher
  - DAT (Developer Automation Tool)
 
-## How to install 
- - install node 12 or higher version
- - install DAT by `npm install -g dat-tool`
- - go to `project_installer` folder
- - type `npm install` to install node types
- - then, type `dat m` , if you want to develop script
- - create `.env.prod.json` file
- - And for use project_installer script, type `dat play` or just `dat p`
 
 ## How to use
- - `dat p i` install/update project
- <!-- - `dat p stp` stop docker containers -->
+
+- create `.env.prod.json` file as sample (to define your apps and used databases)
+- `dat p i` install/update project
+- `dat p stp` stop docker containers
 
 
 ## Authors
-- project_installer was built by DAT 0.4.7
+- project_installer was built by DAT 0.5.9
 - madkne

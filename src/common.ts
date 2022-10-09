@@ -90,7 +90,7 @@ export async function stopContainers(names?: string[], isRemove = false, configs
             }
             // =>if just stop
             else {
-                if (!isRemove && await OS.shell(`${configs.docker_compose_command} rm -s ${name}`, configs.dist_path) !== 0) return false;
+                if (!isRemove && await OS.shell(`${configs.docker_compose_command} rm  ${name}`, configs.dist_path) !== 0) return false;
             }
         }
     } else {
