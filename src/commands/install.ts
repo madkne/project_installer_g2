@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { loadAllConfig, loadSubDomains, stopContainers } from '../common';
+import { clone, loadAllConfig, loadSubDomains, stopContainers } from '../common';
 import { CommandArgvName, CommandName, ConfigsObject, Database } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -242,8 +242,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     for (const file of compiledFiles) {
                         // =>render app entrypoint
                         if (fs.existsSync(path.join(clonePath, file))) {
+                            let data = clone(this.configs);
+                            data['envs'] = subdomain.envs;
                             // =>render file of project
-                            let renderFile = await TEM.renderFile(path.join(clonePath, file), { data: this.configs, noCache: true });
+                            let renderFile = await TEM.renderFile(path.join(clonePath, file), { data, noCache: true });
                             fs.writeFileSync(path.join(clonePath, file), renderFile.data);
                         }
                     }

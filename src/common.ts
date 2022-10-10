@@ -108,3 +108,7 @@ export async function stopContainers(names?: string[], isRemove = false, configs
         return true;
     }
 }
+
+export function clone(obj: any) {
+    return JSON.parse(JSON.stringify(obj));
+}
