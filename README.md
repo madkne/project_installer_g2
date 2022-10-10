@@ -70,6 +70,16 @@ sudo apt -y install gcc g++ make
 sudo npm i -g dat-tool
 ```
 
+
+# `prod.config.js` file
+
+## supported functions
+
+- `init`
+- `finish`
+- `beforeBuild`
+- `compileFiles` : return list of files that must compiled with config variables
+
 ## Authors
 - project_installer was built by DAT 0.5.9
 - madkne

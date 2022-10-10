@@ -170,21 +170,29 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     }
     /**************************** */
     async runProjectConfigsJsFile(name: string, functionName = 'init') {
+        let res1 = await this._runProjectConfigsJsFile(name, functionName);
+        if (res1 !== undefined) {
+            if (typeof res1 === 'object') {
+                this.configs = res1;
+            }
+            else if (res1 === false) {
+                process.exit(1);
+                return false;
+            }
+        }
+        return true;
+    }
+    /**************************** */
+    async _runProjectConfigsJsFile(name: string, functionName: string) {
         if (this.projectConfigsJsFiles[name] && this.projectConfigsJsFiles[name][functionName]) {
             let res2 = await this.projectConfigsJsFiles[name][functionName](this.configs, {
                 git: GIT,
                 logs: LOG,
                 os: OS,
             }, this.getArgv);
-            if (typeof res2 === 'object') {
-                this.configs = res2;
-            }
-            else if (res2 === false) {
-                process.exit(1);
-                return false;
-            }
+            return res2;
         }
-        return true;
+        return undefined;
     }
     /**************************** */
     async cloneSubDomainProjects() {
@@ -228,6 +236,18 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             }
             // =>check if allowed to clone project
             if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
+                // =>get compiled files
+                let compiledFiles = await this._runProjectConfigsJsFile(subdomain.name, 'compileFiles');
+                if (compiledFiles !== undefined && Array.isArray(compiledFiles)) {
+                    for (const file of compiledFiles) {
+                        // =>render app entrypoint
+                        if (fs.existsSync(path.join(clonePath, file))) {
+                            // =>render file of project
+                            let renderFile = await TEM.renderFile(path.join(clonePath, file), { data: this.configs, noCache: true });
+                            fs.writeFileSync(path.join(clonePath, file), renderFile.data);
+                        }
+                    }
+                }
                 // =>run init command
                 await this.runProjectConfigsJsFile(subdomain.name, 'init');
 
