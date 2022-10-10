@@ -12,7 +12,7 @@ import { loadAllConfig } from "./src/common";
 import { StopCommand } from "./src/commands/stop";
 
 /************************************* */
-const VERSION = '0.47';
+const VERSION = '0.48';
 
 /************************************* */
 export async function main(): Promise<number> {

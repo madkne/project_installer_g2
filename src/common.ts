@@ -54,6 +54,7 @@ export async function loadAllConfig(mode: ConfigMode = 'prod'): Promise<ConfigsO
     fs.mkdirSync(configs.dockerfiles_path, { recursive: true });
     configs.docker_compose_command = `sudo docker-compose -f ${path.join(configs.dist_path, 'docker-compose.yml')} --project-name ${configs.project_name}`;
     // =>replace variables
+    if (!configs.variables) configs.variables = {};
 
     configs = await advancedLoadConfigs(configs, envPath) as any;
     // console.log('configs:', configs)

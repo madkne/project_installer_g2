@@ -214,6 +214,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     depth: 1,
                     username: this.configs.git_username,
                     password: this.configs.git_password,
+                    directory: subdomain.branch,
                 }, clonePath);
                 LOG.log(res.stderr);
                 if (res.code !== 0) return false;
