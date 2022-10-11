@@ -9,7 +9,9 @@ email admin@gmail.com
 {% for sub in sub_domains %}
 {{ sub.subdomain + '.' if sub.subdomain.length > 0 else ''}}{{domain_name}}, www.{{sub.subdomain + '.' if
 sub.subdomain.length > 0 else ''}}{{domain_name}} {
+{% if ssl_enabled %}
 tls /etc/cert/cert.crt /etc/cert/cert.key
+{% endif %}
 reverse_proxy nginx:{{'443' if ssl_enabled else '80'}} {
 transport http {
 tls_insecure_skip_verify
