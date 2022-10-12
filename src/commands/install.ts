@@ -246,9 +246,11 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 await this.runProjectConfigsJsFile(subdomain.name, 'init');
 
             }
-            // =>render docker file of project
-            let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: this.configs, noCache: true });
-            fs.writeFileSync(path.join(this.configs.dockerfiles_path, `${subdomain.name}_Dockerfile`), renderDockerfile.data);
+            // =>render docker file of project, if exist
+            if (fs.existsSync(path.join(clonePath, 'Dockerfile'))) {
+                let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: this.configs, noCache: true });
+                fs.writeFileSync(path.join(this.configs.dockerfiles_path, `${subdomain.name}_Dockerfile`), renderDockerfile.data);
+            }
         }
     }
     /**************************** */
