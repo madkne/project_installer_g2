@@ -35,7 +35,7 @@ export async function loadAllConfig(mode: ConfigMode = 'prod'): Promise<ConfigsO
 
         {
             name: 'docker_registery',
-            default: 'dockerhub.ir',//'docker.io',
+            default: 'docker.io',//'dockerhub.ir',
         },
     ];
     // =>set default configs, if not set
@@ -111,4 +111,53 @@ export async function stopContainers(names?: string[], isRemove = false, configs
 
 export function clone(obj: any) {
     return JSON.parse(JSON.stringify(obj));
+}
+
+export async function generateSSL(configs: ConfigsObject) {
+    // =>root path
+    const rootSSLPath = path.join(configs.ssl_path, 'root');
+    fs.mkdirSync(rootSSLPath, { recursive: true });
+    // =>wildcard path
+    const wildcardSSLPath = path.join(configs.ssl_path, 'wildcard');
+    fs.mkdirSync(wildcardSSLPath, { recursive: true });
+    // =>check ssl root files exist
+    if (!fs.existsSync(path.join(rootSSLPath, 'cert.crt')) || !fs.existsSync(path.join(rootSSLPath, 'cert.key'))) {
+        LOG.info('generating self signed ssl files (root domain) ...');
+        if (!await _generateSelfSignedSSl(rootSSLPath, configs.domain_name, configs.domain_name)) return false;
+        await OS.shell(`sudo chmod -R 777 ${configs.ssl_path}`);
+    }
+    // =>check ssl wildcard (sub domains) files exist
+    if (!fs.existsSync(path.join(wildcardSSLPath, 'cert.crt')) || !fs.existsSync(path.join(wildcardSSLPath, 'cert.key'))) {
+        LOG.info('generating self signed ssl files (wildcard) ...');
+        if (!await _generateSelfSignedSSl(wildcardSSLPath, configs.domain_name, '*.' + configs.domain_name)) return false;
+        await OS.shell(`sudo chmod -R 777 ${configs.ssl_path}`);
+    }
+    // =>copy ssl folder to .dist
+    OS.copyDirectory(configs.ssl_path, path.join(configs.dist_path, 'ssl'));
+}
+
+async function _generateSelfSignedSSl(sslPath: string, domainName: string, commonName: string) {
+    // let res12 = await OS.shell(`sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout ${path.join(this.configs.ssl_path, 'cert.key')} -out ${path.join(this.configs.ssl_path, 'cert.crt')}`, this.configs.ssl_path);
+    let commands = `
+SUBJ="
+C=US
+ST=NY
+O=Local Developement
+localityName=Local Developement
+commonName=${commonName}
+organizationalUnitName=Local Developement
+emailAddress=admin@${domainName}
+" &&
+openssl genrsa -out "${path.join(sslPath, 'cert.key')}" 2048 &&
+openssl req -new -subj "$(echo -n "$SUBJ" | tr "\\n" "/")" -key "${path.join(sslPath, 'cert.key')}" -out "${path.join(sslPath, 'cert.csr')}" &&
+openssl x509 -req -days 3650 -in "${path.join(sslPath, 'cert.csr')}" -signkey "${path.join(sslPath, 'cert.key')}" -out "${path.join(sslPath, 'cert.crt')}" &&
+rm "${path.join(sslPath, 'cert.csr')}"
+`;
+    // console.log(commands)
+    let res12 = await OS.shell(commands, sslPath)
+    if (res12 !== 0) {
+        return false;
+    }
+
+    return true;
 }

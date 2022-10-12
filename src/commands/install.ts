@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { clone, loadAllConfig, loadSubDomains, stopContainers } from '../common';
+import { clone, generateSSL, loadAllConfig, loadSubDomains, stopContainers } from '../common';
 import { CommandArgvName, CommandName, ConfigsObject, Database } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -71,18 +71,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         // =>load all configs
         this.configs = await loadAllConfig(this.getArgv('environment'));
         LOG.info(`install in '${this.getArgv('environment')}' mode ...`);
-        // =>check ssl files exist
-        if (this.configs.ssl_enabled && (!fs.existsSync(path.join(this.configs.ssl_path, 'cert.crt')) || !fs.existsSync(path.join(this.configs.ssl_path, 'cert.key')))) {
-            LOG.info('generating ssl files ...');
-            let res12 = await OS.shell(`sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout ${path.join(this.configs.ssl_path, 'cert.key')} -out ${path.join(this.configs.ssl_path, 'cert.crt')}`, this.configs.ssl_path);
-            if (res12 !== 0) {
-                return false;
-            }
-            await OS.shell(`sudo chmod -R 777 ${this.configs.ssl_path}`);
+        // =>if ssl enabled
+        if (this.configs.ssl_enabled) {
+            await generateSSL(this.configs);
         }
-
-        // =>copy ssl folder to .dist
-        OS.copyDirectory(this.configs.ssl_path, path.join(this.configs.dist_path, 'ssl'));
         // =>get git username, if not
         if (!this.configs.git_username || this.configs.git_username.length === 0) {
             this.configs.git_username = await IN.input('Enter git username:');

@@ -10,7 +10,12 @@ email admin@gmail.com
 {{ sub.subdomain + '.' if sub.subdomain.length > 0 else ''}}{{domain_name}}, www.{{sub.subdomain + '.' if
 sub.subdomain.length > 0 else ''}}{{domain_name}} {
 {% if ssl_enabled %}
-tls /etc/cert/cert.crt /etc/cert/cert.key
+{% if sub.subdomain.length == 0 %}
+tls /etc/cert/root/cert.crt /etc/cert/root/cert.key
+
+{% else %}
+tls /etc/cert/wildcard/cert.crt /etc/cert/wildcard/cert.key
+{% endif %}
 {% endif %}
 reverse_proxy nginx:{{'443' if ssl_enabled else '80'}} {
 transport http {
