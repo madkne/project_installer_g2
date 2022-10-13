@@ -13,7 +13,12 @@
 
 ## Sub domain
 
-sample:
+|property| required | description|
+|-------| ------- | --------- |
+| subdomain | **YES** | name of subdomain like 'app' |
+|disabled | NO | ignore this subdomain |
+
+## sample
 ```
 [
     {

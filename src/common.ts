@@ -57,6 +57,8 @@ export async function loadAllConfig(mode: ConfigMode = 'prod'): Promise<ConfigsO
     if (!configs.variables) configs.variables = {};
 
     configs = await advancedLoadConfigs(configs, envPath) as any;
+    // =>remove disabled sub domains
+    configs.sub_domains = (configs.sub_domains as SubDomain[]).filter(i => !i.disabled);
     // console.log('configs:', configs)
     return configs;
 }
@@ -68,6 +70,8 @@ async function advancedLoadConfigs(configs: object, envPath: string) {
     for (const key of Object.keys(newConfigsJson)) {
         configs[key] = newConfigsJson[key];
     }
+
+
 
     return configs;
 }

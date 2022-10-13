@@ -21,6 +21,7 @@ export interface SubDomain {
     port: number;
     envs?: { [k: string]: any };
     depends?: string[];
+    disabled?: boolean;
     /**
      * in default same as port
      */
