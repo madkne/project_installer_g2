@@ -59,13 +59,13 @@ services:
       {% endfor %}
     {% endif %}
     restart: unless-stopped
-    {% if domain.depends.length > 0 %}
     {% if domain.healthcheck %}
     healthcheck:
-      test: {{domain.healthcheck.test | safe}}
+      test: {{domain.healthcheck._test_str | safe}}
       timeout: {{domain.healthcheck.timeout}}s
       retries: {{domain.healthcheck.retries}}
     {% endif %}
+    {% if domain.depends.length > 0 %}
     links:
       {% for link in domain.depends %}- {{link}}
       {% endfor %}

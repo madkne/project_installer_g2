@@ -196,6 +196,12 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (subdomain.envs) {
                 subdomain.__hasEnvs = true;
             }
+            // =>normalize app healthcheck
+            if (subdomain.healthcheck) {
+                subdomain.healthcheck._test_str = `[ ${subdomain.healthcheck.test.map(i => `"${i}"`).join(', ')} ]`;
+                if (!subdomain.healthcheck.retries) subdomain.healthcheck.retries = 30;
+                if (!subdomain.healthcheck.timeout) subdomain.healthcheck.timeout = 1;
+            }
             // clone project in dist folder
             let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
             let skipCloneProjects = [];

@@ -22,12 +22,20 @@ export interface SubDomain {
     envs?: { [k: string]: any };
     depends?: string[];
     disabled?: boolean;
+    healthcheck?: AppHealthCheck;
     /**
      * in default same as port
      */
     exposePort?: number;
 
     __hasEnvs?: boolean;
+}
+
+export interface AppHealthCheck {
+    test: string[];
+    timeout?: number;
+    retries?: number;
+    _test_str?: string;
 }
 
 export interface Database {
