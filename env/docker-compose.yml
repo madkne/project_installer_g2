@@ -60,6 +60,12 @@ services:
     {% endif %}
     restart: unless-stopped
     {% if domain.depends.length > 0 %}
+    {% if domain.healthcheck %}
+    healthcheck:
+      test: {{domain.healthcheck.test | safe}}
+      timeout: {{domain.healthcheck.timeout}}s
+      retries: {{domain.healthcheck.retries}}
+    {% endif %}
     links:
       {% for link in domain.depends %}- {{link}}
       {% endfor %}

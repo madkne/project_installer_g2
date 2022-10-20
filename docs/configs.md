@@ -17,6 +17,16 @@
 |-------| ------- | --------- |
 | subdomain | **YES** | name of subdomain like 'app' |
 |disabled | NO | ignore this subdomain |
+| healthcheck | NO | add health check on app| 
+
+### `healthcheck`
+
+|property| required | description|
+|-------| ------- | --------- |
+| test | **YES** | shell command with zero return |
+| timeout | NO | default is `1` |
+| retries | NO | default is `30` | 
+
 
 ## sample
 ```
