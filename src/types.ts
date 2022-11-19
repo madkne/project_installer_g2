@@ -41,7 +41,8 @@ export interface AppHealthCheck {
 export interface Database {
     type: "mysql" | "mongo" | "redis";
     port: number;
-    dbname: string;
+    dbname?: string;
+    mysql_db_names: string[];
     name: string;
     root_password?: string;
     allow_public_db?: boolean;

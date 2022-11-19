@@ -107,7 +107,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         }
         // =>render hooks
         let hookFiles = [
-            // 'mysql/init.sql',
+            'mysql/init.sql',
             'nginx/uwsgi_params',
             'nginx/conf/nginx.conf',
             'caddy/Caddyfile',
@@ -272,9 +272,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 db.realPort = 3306;
                 if (!db.volumes) {
                     db.volumes = [
-                        './data/mysql_data:/var/lib/mysql',
-                        './data/mysql:/docker-entrypoint-initdb.d/:ro'
-                    ];
+                        './data/mysql_data:/var/lib/mysql',];
                 }
                 db.envs = {
                     MYSQL_ROOT_PASSWORD: db.root_password,
@@ -287,6 +285,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     timeout: 1,
                     retries: 30,
                 };
+                if (db.mysql_db_names) {
+                    db.envs['MYSQL_DATABASE'] = undefined;
+                    db.volumes.push("./hooks/mysql:/docker-entrypoint-initdb.d:ro");
+                }
             }
             // redis
             else if (db.type === 'redis') {
