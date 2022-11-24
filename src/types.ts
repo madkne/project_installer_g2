@@ -23,12 +23,20 @@ export interface SubDomain {
     depends?: string[];
     disabled?: boolean;
     healthcheck?: AppHealthCheck;
+    locations?: AppLocation[];
     /**
      * in default same as port
      */
     exposePort?: number;
 
     __hasEnvs?: boolean;
+}
+
+export interface AppLocation {
+    url: string;
+    modifier?: string;
+    alias?: string;
+    internal?: boolean;
 }
 
 export interface AppHealthCheck {

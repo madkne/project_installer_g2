@@ -18,6 +18,16 @@
 | subdomain | **YES** | name of subdomain like 'app' |
 |disabled | NO | ignore this subdomain |
 | healthcheck | NO | add health check on app| 
+| locations| NO | nginx location directive |
+
+
+### `locations`
+|property| required | description|
+|-------| ------- | --------- |
+|url|**YES**|-
+|modifier| NO |Having a modifier in the location block will allow NGINX to treat a URL differently.|
+|alias| NO | final path|
+internal| NO | This tells nginx it's not accessible from the outside|
 
 ### `healthcheck`
 
