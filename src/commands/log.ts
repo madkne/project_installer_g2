@@ -51,17 +51,15 @@ export class LogCommand extends CliCommand<CommandName, CommandArgvName> impleme
     async implement(): Promise<boolean> {
         // =>load all configs
         this.configs = await loadAllConfig(this.getArgv('environment'));
-        let services = undefined;
-        if (this.hasArgv('service')) {
-            services = this.getArgv('services').split(',');
-        }
         // LOG.info(`Stopping services ....`);
         let serviceName: string;
         if (this.hasArgv('service')) {
-            serviceName = makeDockerServiceNameAsValid(this.getArgv('service'), this.configs);
+            serviceName = this.getArgv('service');
+            // await makeDockerServiceNameAsValid(this.getArgv('service'), this.configs);
         }
         // =>show log docker composes
-        await OS.shell(`${this.configs.docker_compose_command} logs ${this.hasArgv('follow') ? '-f' : ''} ${this.hasArgv('service') ? serviceName : ''}`, this.configs.dist_path);
+        const command = `${this.configs.docker_compose_command} logs ${this.hasArgv('follow') ? '-f' : ''} ${this.hasArgv('service') ? serviceName : ''}`;
+        await OS.shell(command, this.configs.dist_path);
 
         return true;
     }
