@@ -1,5 +1,5 @@
-export type CommandName = 'install' | 'stop';
-export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services';
+export type CommandName = 'install' | 'stop' | 'log';
+export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service';
 
 export type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'env_path' | 'dist_path' | 'domain_name' | 'ssl_enabled' | 'databases' | 'domain_name' | 'sub_domains' | 'variables' | 'ssl_path' | 'docker_compose_command' | 'project_name' | 'dockerfiles_path';
 export type ConfigsObject = { [k in ConfigVariableKey]: any };

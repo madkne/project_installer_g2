@@ -165,3 +165,12 @@ rm "${path.join(sslPath, 'cert.csr')}"
 
     return true;
 }
+
+
+export async function makeDockerServiceNameAsValid(name: string, configs: ConfigsObject) {
+    if (await OS.checkCommand('docker -v', 'version 20')) {
+        return configs.project_name + '-' + name + '-1';
+    } else {
+        return configs.project_name + '_' + name + '_1';
+    }
+}
