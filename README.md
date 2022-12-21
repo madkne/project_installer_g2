@@ -31,6 +31,7 @@ clone, build, and run the project with nginx and caddy on multiple sub domains o
 - [Application Requirements for Deploy](./docs/app-reqs.md)
 - [Generate SSL](./docs/generate-ssl.md)
 - [Configure project](./docs/configs.md)
+- [Nginx Analyzer](./docs/ngnix_analyzer.md)
 
 ## Authors
 - project_installer was built by DAT 0.5.9
