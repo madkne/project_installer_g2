@@ -18,6 +18,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
 
     configs: ConfigsObject;
     projectConfigsJsFiles: {} = {};
+    updatingServer = false;
 
     get name(): CommandName {
         return 'install';
@@ -136,6 +137,14 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 await OS.shell(`sudo docker build -t ${this.configs.project_name}_${subdomain.name} --network=host -f ${this.configs.dockerfiles_path}/${subdomain.name}_Dockerfile .`, clonePath);
             }
         }
+        this.updatingServer = true;
+        let updatingInterval = setInterval(() => {
+            if (!this.updatingServer) {
+                clearInterval(updatingInterval);
+                return;
+            }
+            OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
+        }, 1000);
         // =>stop docker composes
         await stopContainers(undefined, this.hasArgv('remove-containers'), this.configs);
         // =>build docker composes
@@ -155,7 +164,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             await this.runProjectConfigsJsFile(subdomain.name, 'finish');
 
         }
-
+        this.updatingServer = false;
         LOG.success(`You must set '${this.configs.domain_name}' and the other sub domains on '/etc/hosts' file.\nYou can see project on http${this.configs.ssl_enabled ? 's' : ''}://${this.configs.domain_name}`);
 
         return true;
