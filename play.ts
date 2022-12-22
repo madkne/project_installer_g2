@@ -13,7 +13,7 @@ import { StopCommand } from "./src/commands/stop";
 import { LogCommand } from "./src/commands/log";
 
 /************************************* */
-const VERSION = '0.61';
+const VERSION = '0.62';
 
 /************************************* */
 export async function main(): Promise<number> {

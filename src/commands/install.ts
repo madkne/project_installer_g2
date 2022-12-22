@@ -1,6 +1,6 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
 import { clone, generateSSL, loadAllConfig, loadSubDomains, stopContainers } from '../common';
-import { CommandArgvName, CommandName, ConfigsObject, Database } from '../types';
+import { CommandArgvName, CommandName, ConfigsObject, Database, SubDomain } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as LOG from '@dat/lib/log';
@@ -60,9 +60,15 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 type: 'string',
             },
             {
+                name: 'skip-caching-build',
+                alias: 's4',
+                description: 'skip to caching build dockerfile of all or specific projects (like * or app1,app2)',
+                type: 'string',
+            },
+            {
                 name: 'remove-containers',
                 alias: 'rc',
-                description: 'remove containers when stoping services',
+                description: 'remove containers when stopping services',
                 type: 'boolean',
             }
         ];
@@ -121,20 +127,24 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         // =>render docker compose
         await TEM.saveRenderFile(path.join(this.configs.env_path, 'docker-compose.yml'), path.join(this.configs.dist_path), { data: this.configs, noCache: true });
         let skipBuildProjects = [];
+        let noCacheBuildProjects = [];
         if (this.hasArgv('skip-build-projects')) {
-            skipBuildProjects = this.getArgv('skip-build-projects') ? this.getArgv('skip-build-projects').split(',') : ['*'];
+            skipBuildProjects = this.extractServiceNames('skip-build-projects');
+        }
+        if (this.hasArgv('skip-caching-build')) {
+            noCacheBuildProjects = this.extractServiceNames('skip-caching-build');
         }
 
         // =>iterate projects
         for (const subdomain of loadSubDomains(this.configs)) {
             let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
             // =>check if allowed to clone project
-            if (!skipBuildProjects.includes('*') && !skipBuildProjects.includes(subdomain.name)) {
+            if (!skipBuildProjects.includes(subdomain.name)) {
                 // =>run 'beforeBuild' function
                 await this.runProjectConfigsJsFile(subdomain.name, 'beforeBuild');
                 // =>build docker file
                 LOG.info(`building Dockerfile of ${subdomain.name} ...`);
-                await OS.shell(`sudo docker build -t ${this.configs.project_name}_${subdomain.name} --network=host -f ${this.configs.dockerfiles_path}/${subdomain.name}_Dockerfile .`, clonePath);
+                await OS.shell(`sudo docker build -t ${this.configs.project_name}_${subdomain.name} ${noCacheBuildProjects.includes(subdomain.name) ? '--no-cache' : ''} --network=host -f ${this.configs.dockerfiles_path}/${subdomain.name}_Dockerfile .`, clonePath);
             }
         }
         this.updatingServer = true;
@@ -144,7 +154,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 return;
             }
             OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
-        }, 1000);
+        }, 3000);
         // =>stop docker composes
         await stopContainers(undefined, this.hasArgv('remove-containers'), this.configs);
         // =>build docker composes
@@ -221,11 +231,11 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
             let skipCloneProjects = [];
             if (this.hasArgv('skip-clone-projects')) {
-                skipCloneProjects = this.getArgv('skip-clone-projects') ? this.getArgv('skip-clone-projects').split(',') : ['*'];
+                skipCloneProjects = this.extractServiceNames('skip-clone-projects');
             }
 
             // =>check if allowed to clone project
-            if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
+            if (!skipCloneProjects.includes(subdomain.name)) {
                 await OS.rmdir(clonePath);
                 fs.mkdirSync(clonePath, { recursive: true });
                 LOG.info(`cloning ${subdomain.name} project...`);
@@ -356,6 +366,13 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 db.volumes = [];
             }
         }
+    }
+    /**************************** */
+    extractServiceNames(commandName: CommandArgvName) {
+        let allServiceNames = (this.configs.sub_domains as SubDomain[]).map(i => i.name);
+        let serviceNames = this.getArgv(commandName) ? this.getArgv(commandName).split(',').map(i => i.trim()).filter(i => allServiceNames.includes(i)) : allServiceNames;
+
+        return serviceNames;
     }
 
 } 
