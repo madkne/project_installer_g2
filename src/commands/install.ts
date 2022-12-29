@@ -162,6 +162,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     return;
                 }
                 if (lastUpdatingServerLog && new Date().getTime() - lastUpdatingServerLog < 3000) return;
+                lastUpdatingServerLog = new Date().getTime();
                 OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
             }, 10);
         }
