@@ -66,6 +66,12 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 type: 'string',
             },
             {
+                name: 'skip-updating-server-log',
+                alias: 's5',
+                description: 'skip to wall updating server message',
+                type: 'string',
+            },
+            {
                 name: 'remove-containers',
                 alias: 'rc',
                 description: 'remove containers when stopping services',
@@ -148,13 +154,17 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             }
         }
         this.updatingServer = true;
-        let updatingInterval = setInterval(() => {
-            if (!this.updatingServer) {
-                clearInterval(updatingInterval);
-                return;
-            }
-            OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
-        }, 3000);
+        let lastUpdatingServerLog: number;
+        if (!this.hasArgv('skip-updating-server-log')) {
+            let updatingInterval = setInterval(() => {
+                if (!this.updatingServer) {
+                    clearInterval(updatingInterval);
+                    return;
+                }
+                if (lastUpdatingServerLog && new Date().getTime() - lastUpdatingServerLog < 3000) return;
+                OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
+            }, 10);
+        }
         // =>stop docker composes
         await stopContainers(undefined, this.hasArgv('remove-containers'), this.configs);
         // =>build docker composes
