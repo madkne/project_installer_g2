@@ -1,7 +1,15 @@
-# Project Installer
+# Project Installer (generation 2)
 
-clone, build, and run the project with nginx and caddy on multiple sub domains on ONE server
+clone, build, and run your dockerized project with nginx on multiple sub domains on ONE server
 
+## features
+
+- supported YML syntax (with extend files)
+- supported multiple environments
+- no docker-compose dependency
+- supported project profiles
+- supported multiple storages
+- auto ssl generation
 
 
 ## supported databases
@@ -12,14 +20,14 @@ clone, build, and run the project with nginx and caddy on multiple sub domains o
 	
 ## Requirements
  - docker
- - docker-compose
  - node 12 or higher
  - DAT (Developer Automation Tool)
 
 
 ## How to use
 
-- create `.env.prod.json` file as sample (to define your apps and used databases)
+- `dat p add --name=test_project`
+- edit `profiles/test_project/configs.prod.yml` file (to define your apps and used databases)
 - `dat p i` install/update project
 - `dat p stp` stop docker containers
 

@@ -1,6 +1,6 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { clone, generateSSL, loadAllConfig, loadSubDomains, stopContainers } from '../common';
-import { CommandArgvName, CommandName, ConfigsObject, Database, SubDomain } from '../types';
+import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, findProfileByName, generateSSL, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, runDockerContainer, setContainersHealthy, stopContainers } from '../common';
+import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as LOG from '@dat/lib/log';
@@ -9,6 +9,7 @@ import * as ENV from '@dat/lib/env';
 import * as OS from '@dat/lib/os';
 import * as GIT from '@dat/lib/git';
 import * as TEM from '@dat/lib/template';
+import { normalizeMongo, normalizeMysql, normalizeRedis } from '../storages';
 
 
 
@@ -16,9 +17,12 @@ import * as TEM from '@dat/lib/template';
 
 export class InstallCommand extends CliCommand<CommandName, CommandArgvName> implements OnImplement {
 
-    configs: ConfigsObject;
+    configs: ProjectConfigs;
     projectConfigsJsFiles: {} = {};
     updatingServer = false;
+    profile: Profile;
+    serviceConfigsFileName = 'service.configs.js';
+    serviceNames: string[] = [];
 
     get name(): CommandName {
         return 'install';
@@ -35,11 +39,16 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     get argvs(): CommandArgvItem<CommandArgvName>[] {
         return [
             {
+                name: 'profile',
+                alias: 'p',
+                description: 'use configs of specific profile',
+                type: 'string',
+            },
+            {
                 name: 'environment',
                 alias: 'env',
                 description: 'set specific environment',
                 type: 'string',
-                defaultValue: 'prod',
             },
             {
                 name: 'skip-remove-unused-images',
@@ -81,22 +90,35 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     }
     /**************************** */
     async implement(): Promise<boolean> {
+        // =>find profile
+        this.profile = await findProfileByName(this.getArgv('profile'));
+        if (!this.profile) {
+            LOG.error('no specific profile');
+            return false;
+        }
         // =>load all configs
-        this.configs = await loadAllConfig(this.getArgv('environment'));
-        LOG.info(`install in '${this.getArgv('environment')}' mode ...`);
+        const env = this.getArgv('environment', this.profile.defaultEnv ?? 'prod');
+        this.configs = await loadAllConfig(this.profile.path, env);
+        LOG.info(`install in '${env}' mode ...`);
+        // =>load active service names
+        this.serviceNames = [];
+        for (const key of Object.keys(this.configs.services)) {
+            if (this.configs.services[key].disabled) continue;
+            this.serviceNames.push(key);
+        }
         // =>if ssl enabled
-        if (this.configs.ssl_enabled) {
-            await generateSSL(this.configs);
+        if (this.configs.domain.ssl_enabled) {
+            await generateSSL(this.configs, env);
         }
         // =>get git username, if not
-        if (!this.configs.git_username || this.configs.git_username.length === 0) {
-            this.configs.git_username = await IN.input('Enter git username:');
-            await ENV.save('git_username', this.configs.git_username);
+        if (!this.configs._env.git_username || this.configs._env.git_username.length === 0) {
+            this.configs._env.git_username = await IN.input('Enter git username:');
+            await ENV.save('git_username', this.configs._env.git_username);
         }
         // =>get git password, if not
-        if (!this.configs.git_password || this.configs.git_password.length === 0) {
-            this.configs.git_password = await IN.password('Enter git password:');
-            await ENV.save('git_password', this.configs.git_password);
+        if (!this.configs._env.git_password || this.configs._env.git_password.length === 0) {
+            this.configs._env.git_password = await IN.password('Enter git password:');
+            await ENV.save('git_password', this.configs._env.git_password);
         }
         // =>disable ssl verify
         await OS.exec(`git config --global http.sslVerify false`);
@@ -109,29 +131,27 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             `)
         }
         // clone projects in dist folder
-        await this.cloneSubDomainProjects();
+        await this.cloneProjectServices();
 
         // =>create hook dirs
-        let envHooksPath = path.join(this.configs.env_path, 'hooks');
-        let distHooksPath = path.join(this.configs.dist_path, 'hooks');
-        let hookDirs = ['mysql', 'nginx', 'nginx/conf', 'caddy'];
+        let envHooksPath = path.join(this.configs._env.env_path, 'hooks');
+        let distHooksPath = path.join(this.configs._env.dist_path, 'hooks');
+        let hookDirs = ['mysql', 'nginx', 'nginx/conf'];
         for (const d of hookDirs) {
-            fs.mkdirSync(path.join(this.configs.dist_path, 'hooks', d), { recursive: true });
+            fs.mkdirSync(path.join(this.configs._env.dist_path, 'hooks', d), { recursive: true });
         }
         // =>render hooks
         let hookFiles = [
-            'mysql/init.sql',
+            'mysql/my.cnf',
             'nginx/uwsgi_params',
             'nginx/conf/nginx.conf',
-            'caddy/Caddyfile',
         ];
         for (const f of hookFiles) {
             await TEM.saveRenderFile(path.join(envHooksPath, f), path.dirname(path.join(distHooksPath, f)), { data: this.configs, noCache: true });
         }
         // =>normalize dbs
-        await this.normalizeDatabases();
-        // =>render docker compose
-        await TEM.saveRenderFile(path.join(this.configs.env_path, 'docker-compose.yml'), path.join(this.configs.dist_path), { data: this.configs, noCache: true });
+        await this.normalizeStorages();
+
         let skipBuildProjects = [];
         let noCacheBuildProjects = [];
         if (this.hasArgv('skip-build-projects')) {
@@ -141,57 +161,173 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             noCacheBuildProjects = this.extractServiceNames('skip-caching-build');
         }
 
-        // =>iterate projects
-        for (const subdomain of loadSubDomains(this.configs)) {
-            let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
+        // =>iterate services to build them
+        for (const serviceName of this.serviceNames) {
+            let service = this.configs.services[serviceName];
+            let clonePath = path.join(this.configs._env.dist_path, 'clones', serviceName);
             // =>check if allowed to clone project
-            if (!skipBuildProjects.includes(subdomain.name)) {
+            if (!skipBuildProjects.includes(serviceName)) {
                 // =>run 'beforeBuild' function
-                await this.runProjectConfigsJsFile(subdomain.name, 'beforeBuild');
+                await this.runProjectConfigsJsFile(serviceName, 'beforeBuild');
                 // =>build docker file
-                LOG.info(`building Dockerfile of ${subdomain.name} ...`);
-                await OS.shell(`sudo docker build -t ${this.configs.project_name}_${subdomain.name} ${noCacheBuildProjects.includes(subdomain.name) ? '--no-cache' : ''} --network=host -f ${this.configs.dockerfiles_path}/${subdomain.name}_Dockerfile .`, clonePath);
+                LOG.info(`building Dockerfile of ${serviceName} ...`);
+                await OS.shell(`sudo ${service.docker.build_kit_enabled ? 'DOCKER_BUILDKIT=1' : ''} docker build -t ${makeServiceImageName(serviceName, this.configs)} ${noCacheBuildProjects.includes(serviceName) ? '--no-cache' : ''} --network=host -f ${this.configs._env.dockerfiles_path}/${serviceName}_Dockerfile .`, clonePath);
             }
         }
         this.updatingServer = true;
-        let lastUpdatingServerLog: number;
-        if (!this.hasArgv('skip-updating-server-log')) {
-            let updatingInterval = setInterval(() => {
-                if (!this.updatingServer) {
-                    clearInterval(updatingInterval);
-                    return;
-                }
-                if (lastUpdatingServerLog && new Date().getTime() - lastUpdatingServerLog < 3000) return;
-                lastUpdatingServerLog = new Date().getTime();
-                OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
-            }, 10);
+        // let lastUpdatingServerLog: number;
+        // if (!this.hasArgv('skip-updating-server-log')) {
+        //     let updatingInterval = setInterval(() => {
+        //         if (!this.updatingServer) {
+        //             clearInterval(updatingInterval);
+        //             return;
+        //         }
+        //         if (lastUpdatingServerLog && new Date().getTime() - lastUpdatingServerLog < 3000) return;
+        //         lastUpdatingServerLog = new Date().getTime();
+        //         OS.commandResult(`wall "server '${this.configs.project_name}' is updating....\n Please Wait!"`);
+        //     }, 10);
+        // }
+        // =>stop service docker containers 
+        await stopContainers(this.configs, this.serviceNames, true);
+        // =>stop storages, if 'rc' flag
+        if (this.hasArgv('remove-containers')) {
+            await stopContainers(this.configs, Object.keys(this.configs.storages), true, 'storage');
+            await stopContainers(this.configs, ['nginx'], true);
         }
-        // =>stop docker composes
-        await stopContainers(undefined, this.hasArgv('remove-containers'), this.configs);
-        // =>build docker composes
+        // =>up storages docker containers
+        LOG.info('Running storages...');
+        for (const name of Object.keys(this.configs.storages)) {
+            let storage = this.configs.storages[name];
+            let containerName = makeDockerStorageName(name, this.configs);
+            // =>check is run before
+            if (await checkExistDockerContainerByName(containerName)) continue;
+            LOG.info(`Running '${name}' storage...`);
+            if (await runDockerContainer(this.configs, {
+                name: containerName,
+                image: storage.image,
+                hostname: name,
+                ports: [
+                    {
+                        host: storage.realPort,
+                        container: storage.realPort,
+                        host_ip: storage.allow_public ? '0.0.0.0' : '127.0.0.1',
+                    },
+                ],
+                healthCheck: storage.health_check,
+                volumes: storage.volumes,
+                envs: storage.envs,
+                capAdd: storage['capAdd'],
+                argvs: storage.argvs,
+            }) !== 0) {
+                return false;
+            }
+            // =>check health status of container
+            this.configs.storages[name]._health_status = await checkContainerHealthy(this.configs, containerName);
+        }
+        // =>up service docker containers
         LOG.info('Running services...');
-        if (await OS.shell(`${this.configs.docker_compose_command} up --remove-orphans -d`, this.configs.dist_path) !== 0) {
-            return false;
-        }
+        let processingServices = clone<string[]>(this.serviceNames);
+        while (processingServices.length > 0) {
+            const name = processingServices[0];
+            let service = this.configs.services[name];
+            let containerName = makeDockerServiceName(name, this.configs);
+            LOG.info(`Running '${name}' service...`);
+            // =>check depends service
+            if (service.docker.depends) {
+                this.configs = await setContainersHealthy(this.configs);
+                let healthCount = 0;
+                for (const dep of service.docker.depends) {
+                    // =>find depend in storages
+                    if (Object.keys(this.configs.storages).includes(dep) && this.configs.storages[dep]._health_status === 'healthy') {
+                        healthCount++;
+                    }
+                    // =>find depend in services
+                    else if (Object.keys(this.configs.services).includes(dep) && this.configs.services[dep].docker._health_status === 'healthy') {
+                        healthCount++;
+                    }
+                }
+                if (healthCount < service.docker.depends.length) {
+                    // console.log(JSON.stringify(this.configs, null, 2))
+                    // =>move service to last of processing
+                    processingServices.splice(processingServices.indexOf(name), 1);
+                    processingServices.push(name);
+                    // LOG.warning(``)
+                    continue;
+                }
+            }
+            if (await runDockerContainer(this.configs, {
+                name: containerName,
+                image: makeServiceImageName(name, this.configs),
+                hostname: name + '_service',
+                ports: [
+                    {
+                        host: service.docker._host_port,
+                        container: service.docker._expose_port,
+                    }
+                ],
+                volumes: service.docker.volumes,
+                mounts: service.docker.mounts,
+                envs: service.docker.envs,
+                links: service.docker.links,
+                hosts: service.docker.hosts,
+            }) !== 0) {
+                return false;
+            }
+            // =>check health status of container
+            this.configs.services[name].docker._health_status = await checkContainerHealthy(this.configs, containerName);
+            // =>remove service from processing
+            processingServices.splice(processingServices.indexOf(name), 1);
 
+        }
+        // =>up nginx
+        let webServerPorts = [{ host: 80, container: 80 }];
+        const nginxContainerName = makeDockerServiceName('nginx', this.configs);
+        if (!await checkExistDockerContainerByName(nginxContainerName)) {
+            let nginxVolumes = [
+                './hooks/nginx/conf:/etc/nginx/conf.d',
+                './hooks/nginx/uwsgi_params:/etc/nginx/uwsgi_params',
+                './data/static:/static',
+                './data/media:/media',
+                './data/nginx/logs:/var/log/nginx',
+            ];
+            // =>if ssl enabled
+            if (this.configs.domain.ssl_enabled) {
+                nginxVolumes.push(`../ssl/${env}:/etc/nginx/certs`);
+                webServerPorts.push({ host: 443, container: 443 });
+            }
+
+            if (await runDockerContainer(this.configs, {
+                name: nginxContainerName,
+                image: this.configs.project.docker_register + '/nginx:stable',
+                volumes: nginxVolumes,
+                networkAlias: this.configs.domain.name,
+                links: this.serviceNames.map(i => makeDockerServiceName(i, this.configs)),
+                ports: webServerPorts,
+            }) !== 0) {
+                return false;
+            }
+        }
+        if (this.configs.project.debug) {
+            console.log(JSON.stringify(this.configs, null, 2));
+        }
         // =>iterate projects
-        for (const subdomain of loadSubDomains(this.configs)) {
-            let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
+        for (const name of this.serviceNames) {
+            let clonePath = path.join(this.configs._env.dist_path, 'clones', name);
             // =>render app entrypoint
             if (fs.existsSync(path.join(clonePath, 'docker_entrypoint.sh'))) {
                 await TEM.saveRenderFile(path.join(clonePath, 'docker_entrypoint.sh'), path.join(clonePath), { data: this.configs, noCache: true });
             }
             // =>run 'finish' function
-            await this.runProjectConfigsJsFile(subdomain.name, 'finish');
+            await this.runProjectConfigsJsFile(name, 'finish');
 
         }
         this.updatingServer = false;
-        LOG.success(`You must set '${this.configs.domain_name}' and the other sub domains on '/etc/hosts' file.\nYou can see project on http${this.configs.ssl_enabled ? 's' : ''}://${this.configs.domain_name}`);
+        LOG.success(`You must set '${this.configs.domain.name}' and the other sub domains on '/etc/hosts' file.\nYou can see project on http${this.configs.domain.ssl_enabled ? 's' : ''}://${this.configs.domain.name}`);
 
         return true;
     }
     /**************************** */
-    async runProjectConfigsJsFile(name: string, functionName = 'init') {
+    async runProjectConfigsJsFile(name: string, functionName: ServiceConfigsFunctionName = 'init') {
         let res1 = await this._runProjectConfigsJsFile(name, functionName);
         if (res1 !== undefined) {
             if (typeof res1 === 'object') {
@@ -205,7 +341,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         return true;
     }
     /**************************** */
-    async _runProjectConfigsJsFile(name: string, functionName: string) {
+    async _runProjectConfigsJsFile(name: string, functionName: ServiceConfigsFunctionName) {
         if (this.projectConfigsJsFiles[name] && this.projectConfigsJsFiles[name][functionName]) {
             let res2 = await this.projectConfigsJsFiles[name][functionName](this.configs, {
                 git: GIT,
@@ -217,67 +353,94 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         return undefined;
     }
     /**************************** */
-    async cloneSubDomainProjects() {
-        for (const subdomain of loadSubDomains(this.configs)) {
-            // =>normalize sub domain
-            if (!subdomain.port) subdomain.port = 80;
-            if (!subdomain.exposePort) subdomain.exposePort = subdomain.port;
-            if (!subdomain.depends) subdomain.depends = [];
-            if (subdomain.envs) {
-                subdomain.__hasEnvs = true;
+    async cloneProjectServices() {
+        for (const serviceName of Object.keys(this.configs.services)) {
+            let srv = this.configs.services[serviceName];
+            const serviceCustomPath = path.join(this.profile.path, 'services', serviceName);
+            // =>normalize docker
+            if (srv.docker) {
+                if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
+                if (!srv.docker.port) srv.docker.port = "80:80";
+                if (typeof srv.docker.port === 'number' || srv.docker.port.split(':').length == 1) {
+                    srv.docker.port = srv.docker.port + ":" + srv.docker.port;
+                }
+                srv.docker._expose_port = Number(srv.docker.port.split(':')[0]);
+                srv.docker._host_port = Number(srv.docker.port.split(':')[1]);
+                // =>normalize links
+                if (!srv.docker.links) srv.docker.links = [];
+                srv.docker.links = convertNameToContainerName(this.configs, srv.docker.links);
+                // =>normalize depends
+                if (!srv.docker.depends) srv.docker.depends = [];
+                srv.docker._depend_containers = convertNameToContainerName(this.configs, srv.docker.depends);
+                // =>normalize app health_check
+                if (srv.docker.health_check) {
+                    // srv.docker.health_check._test_str = `[ ${srv.docker.health_check.test.map(i => `"${i}"`).join(', ')} ]`;
+                    // if (!srv.docker.health_check.retries) srv.docker.health_check.retries = 30;
+                    // if (!srv.docker.health_check.timeout) srv.docker.health_check.timeout = 1;
+                }
+                // =>set health status
+                srv.docker._health_status = 'stopped';
             }
-            // =>normalize app healthcheck
-            if (subdomain.healthcheck) {
-                subdomain.healthcheck._test_str = `[ ${subdomain.healthcheck.test.map(i => `"${i}"`).join(', ')} ]`;
-                if (!subdomain.healthcheck.retries) subdomain.healthcheck.retries = 30;
-                if (!subdomain.healthcheck.timeout) subdomain.healthcheck.timeout = 1;
-            }
-            // =>normalize app locations
-            if (subdomain.locations) {
-                for (const loc of subdomain.locations) {
-                    if (!loc.modifier) loc.modifier = '';
+            // =>normalize web server
+            if (srv.web) {
+                if (srv.web.locations) {
+                    for (const loc of srv.web.locations) {
+                        if (!loc.modifier) loc.modifier = '';
+                    }
                 }
             }
             // clone project in dist folder
-            let clonePath = path.join(this.configs.dist_path, 'clones', subdomain.name);
+            let clonePath = path.join(this.configs._env.dist_path, 'clones', serviceName);
             let skipCloneProjects = [];
             if (this.hasArgv('skip-clone-projects')) {
                 skipCloneProjects = this.extractServiceNames('skip-clone-projects');
             }
 
             // =>check if allowed to clone project
-            if (!skipCloneProjects.includes(subdomain.name)) {
+            if (!skipCloneProjects.includes(serviceName) && srv.clone) {
+                if (!srv.clone.branch) srv.clone.branch = 'master';
                 await OS.rmdir(clonePath);
                 fs.mkdirSync(clonePath, { recursive: true });
-                LOG.info(`cloning ${subdomain.name} project...`);
+                LOG.info(`cloning ${serviceName}@${srv.clone.branch} project...`);
                 let res = await GIT.clone({
-                    cloneUrl: subdomain.cloneUrl,
-                    branch: subdomain.branch ?? 'master',
+                    cloneUrl: srv.clone.url,
+                    branch: srv.clone.branch,
                     depth: 1,
-                    username: this.configs.git_username,
-                    password: this.configs.git_password,
-                    directory: subdomain.branch,
+                    username: this.configs._env.git_username,
+                    password: this.configs._env.git_password,
+                    directory: srv.clone.branch,
                 }, clonePath);
                 LOG.log(res.stderr);
                 if (res.code !== 0) return false;
                 // =>move from clone branch dir to root dir
-                await OS.copyDirectory(path.join(clonePath, subdomain.branch), clonePath);
-                await OS.rmdir(path.join(clonePath, subdomain.branch));
+                await OS.copyDirectory(path.join(clonePath, srv.clone.branch), clonePath);
+                await OS.rmdir(path.join(clonePath, srv.clone.branch));
+            } else {
+                fs.mkdirSync(clonePath, { recursive: true });
             }
-            // =>load 'prod.config.js' if exist
-            if (fs.existsSync(path.join(clonePath, 'prod.config.js'))) {
-                this.projectConfigsJsFiles[subdomain.name] = await import(path.join(clonePath, 'prod.config.js'));
+            // =>if exist service folder
+            if (fs.existsSync(serviceCustomPath)) {
+                let dirList = fs.readdirSync(serviceCustomPath, { withFileTypes: true });
+                for (const f of dirList) {
+                    if (f.isFile()) {
+                        fs.copyFileSync(path.join(serviceCustomPath, f.name), path.join(clonePath, f.name));
+                    }
+                }
+            }
+            // =>load 'service.configs.js' if exist
+            if (fs.existsSync(path.join(clonePath, this.serviceConfigsFileName))) {
+                this.projectConfigsJsFiles[serviceName] = await import(path.join(clonePath, this.serviceConfigsFileName));
             }
             // =>check if allowed to clone project
-            if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(subdomain.name)) {
+            if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(serviceName)) {
                 // =>get compiled files
-                let compiledFiles = await this._runProjectConfigsJsFile(subdomain.name, 'compileFiles');
+                let compiledFiles = await this._runProjectConfigsJsFile(serviceName, 'compileFiles');
                 if (compiledFiles !== undefined && Array.isArray(compiledFiles)) {
                     for (const file of compiledFiles) {
                         // =>render app entrypoint
                         if (fs.existsSync(path.join(clonePath, file))) {
                             let data = clone(this.configs);
-                            data['envs'] = subdomain.envs;
+                            data['envs'] = srv.docker.envs;
                             // =>render file of project
                             let renderFile = await TEM.renderFile(path.join(clonePath, file), { data, noCache: true });
                             fs.writeFileSync(path.join(clonePath, file), renderFile.data);
@@ -285,91 +448,35 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     }
                 }
                 // =>run init command
-                await this.runProjectConfigsJsFile(subdomain.name, 'init');
-
+                await this.runProjectConfigsJsFile(serviceName, 'init');
             }
             // =>render docker file of project, if exist
             if (fs.existsSync(path.join(clonePath, 'Dockerfile'))) {
                 let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: this.configs, noCache: true });
-                fs.writeFileSync(path.join(this.configs.dockerfiles_path, `${subdomain.name}_Dockerfile`), renderDockerfile.data);
+                fs.writeFileSync(path.join(this.configs._env.dockerfiles_path, `${serviceName}_Dockerfile`), renderDockerfile.data);
             }
         }
     }
     /**************************** */
-    async normalizeDatabases() {
-        for (const db of (this.configs.databases as Database[])) {
+    async normalizeStorages() {
+        for (const storageName of Object.keys(this.configs.storages)) {
+            let db = this.configs.storages[storageName];
             if (!db.timezone) {
                 db.timezone = 'UTC';
             }
             // mysql db
             if (db.type === 'mysql') {
-                db.command = `mysqld --default-authentication-plugin=mysql_native_password --character-set-server=utf8 --collation-server=utf8_general_ci`;
-                if (!db.image) db.image = 'mysql:8.0';
-                db.realPort = 3306;
-                if (!db.volumes) {
-                    db.volumes = [
-                        './data/mysql_data:/var/lib/mysql',];
-                }
-                db.envs = {
-                    MYSQL_ROOT_PASSWORD: db.root_password,
-                    MYSQL_DATABASE: db.dbname,
-                    HOSTNAME: db.name,
-                    MYSQL_TCP_PORT: db.port,
-                };
-                db.healthcheck = {
-                    test: `[ "CMD", "mysqladmin", "ping", "-h", "localhost" ]`,
-                    timeout: 1,
-                    retries: 30,
-                };
-                if (db.mysql_db_names) {
-                    db.envs['MYSQL_DATABASE'] = undefined;
-                    db.volumes.push("./hooks/mysql:/docker-entrypoint-initdb.d:ro");
-                }
+                db = await normalizeMysql(this.configs, storageName, db);
             }
-            // redis
-            else if (db.type === 'redis') {
-                if (!db.image) {
-                    db.image = 'redis:alpine';
-                }
-                db.realPort = 6379;
-                db.healthcheck = {
-                    test: `[ "CMD", "redis-cli", "--raw", "incr", "ping" ]`,
-                    timeout: 1,
-                    retries: 30,
-                }
+            // redis db
+            if (db.type === 'redis') {
+                db = await normalizeRedis(this.configs, storageName, db);
             }
-            // mongo
-            else if (db.type === 'mongo') {
-                if (!db.image) {
-                    db.image = 'mongo:latest';
-                }
-                db.realPort = 27017;
-                db.healthcheck = {
-                    test: `["CMD","mongo", "--eval", "db.adminCommand('ping')"]`,
-                    //test: `echo 'db.runCommand("ping").ok' | mongo localhost:${db.port}/${db.dbname} --quiet`,
-                    timeout: 1,
-                    retries: 30,
-                };
-                if (db.port !== 27017) {
-                    db.command = `mongod --port ${db.port}`;
-                    db.realPort = db.port;
-                }
-                if (!db.volumes) {
-                    db.volumes = [
-                        `./data/mongo_db/${db.name}:/data/db`
-                    ];
-                }
+            // mongo db
+            if (db.type === 'mongo') {
+                db = await normalizeMongo(this.configs, storageName, db);
+            }
 
-                db.envs = {
-                    TZ: db.timezone,
-
-                    MONGO_INITDB_DATABASE: db.dbname,
-                };
-                if (db.root_password) {
-                    db.envs['MONGO_INITDB_ROOT_USERNAME'] = 'root';
-                    db.envs['MONGO_INITDB_ROOT_PASSWORD'] = db.root_password;
-                }
-            }
             if (db.envs) {
                 db.__has_envs = true;
             }
@@ -380,7 +487,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     }
     /**************************** */
     extractServiceNames(commandName: CommandArgvName) {
-        let allServiceNames = (this.configs.sub_domains as SubDomain[]).map(i => i.name);
+        let allServiceNames = Object.keys(this.configs.services);
         let serviceNames = this.getArgv(commandName) ? this.getArgv(commandName).split(',').map(i => i.trim()).filter(i => allServiceNames.includes(i)) : allServiceNames;
 
         return serviceNames;

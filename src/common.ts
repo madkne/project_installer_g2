@@ -1,143 +1,176 @@
-import { ConfigMode, ConfigsObject, ConfigVariableKey, SubDomain } from "./types";
+import { ConfigMode, ConfigVariableKey, DockerContainerHealthType, HealthCheck, Profile, ProjectConfigs, Service } from "./types";
 import * as ENV from '@dat/lib/env';
 import * as LOG from '@dat/lib/log';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as OS from '@dat/lib/os';
 import * as TEM from '@dat/lib/template';
+import * as yml from 'js-yaml';
 
-export async function loadAllConfig(mode: ConfigMode = 'prod'): Promise<ConfigsObject> {
-    let configs = await ENV.loadAll() as ConfigsObject;
-    // =>read .env.json file
-    let envPath = path.join(await OS.cwd(), '.env.' + mode + '.json');
+export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<ProjectConfigs> {
+    // =>read configs.json file
+
+    let configs = await _loadConfigs(profilePath, env);
+    // =>set env configs
+    configs._env = await ENV.loadAll() as any;
+    configs._env.dist_path = path.join(profilePath, '.dist');
+    configs._env.env_path = path.join(await OS.cwd(), 'env');
+    configs._env.ssl_path = path.join(profilePath, 'ssl');
+    fs.mkdirSync(configs._env.ssl_path, { recursive: true });
+    configs._env.dockerfiles_path = path.join(configs._env.dist_path, 'dockerfiles');
+    fs.mkdirSync(configs._env.dockerfiles_path, { recursive: true });
+    // =set variables in configs
+    configs = await _setConfigsVariables(configs, configs.variables);
+    // =>set defaults
+    if (!configs.project) configs.project = { name: 'sample' };
+    if (!configs.project.docker_register) configs.project.docker_register = 'docker.io';
+    configs.project._env = env;
+    if (configs.project.debug) {
+        console.log('configs:', JSON.stringify(configs, null, 2))
+    }
+
+    return configs;
+}
+
+
+async function _loadConfigs(profilePath: string, env = 'prod'): Promise<ProjectConfigs> {
+    let configs: ProjectConfigs;
+    let configsPath = path.join(profilePath, 'configs.' + env + '.yml');
     try {
-        let envFile = JSON.parse(fs.readFileSync(envPath).toString()) as ConfigsObject;
-        // =>merge env contents to configs
-        for (const key of Object.keys(envFile)) {
-            configs[key] = envFile[key];
-        }
+        configs = yml.load(fs.readFileSync(configsPath).toString()) as any;
     } catch (e) {
-        LOG.errorStatus(`fix '.env.${mode}.json' file`);
+        LOG.errorStatus(`fix '${configsPath}' file`);
         console.error(e);
         process.exit(1);
     }
-
-    let ConfigVariables: { name: ConfigVariableKey; default?: any }[] = [
-        // {
-        //     name: 'backend_project_docker_image',
-        //     default: `${projectEnv.project_name}_backend:production`,
-        // },
-        // {
-        //     name: 'frontend_project_docker_image',
-        //     default: `${projectEnv.project_name}_frontend:production`,
-        // },
-
-
-        {
-            name: 'docker_registery',
-            default: 'docker.io',//'dockerhub.ir',
-        },
-    ];
-    // =>set default configs, if not set
-    for (const conf of ConfigVariables) {
-        if (!await ENV.has(conf.name) && conf.default !== undefined) {
-            await ENV.save(conf.name, conf.default);
-            configs[conf.name] = conf.default;
-        }
+    // =>check must be extends from another file
+    if (configs?.project?.extends) {
+        let extendConfigs = await _loadConfigs(profilePath, configs?.project?.extends);
+        configs = mergeConfigs(extendConfigs, configs);
     }
 
-    configs.dist_path = path.join(await OS.cwd(), '.dist');
-    configs.env_path = path.join(await OS.cwd(), 'env');
-    configs.ssl_path = path.join(await OS.cwd(), 'env', 'ssl');
-    fs.mkdirSync(configs.ssl_path, { recursive: true });
-    configs.dockerfiles_path = path.join(configs.dist_path, 'dockerfiles');
-    fs.mkdirSync(configs.dockerfiles_path, { recursive: true });
-    configs.docker_compose_command = `sudo docker-compose -f ${path.join(configs.dist_path, 'docker-compose.yml')} --project-name ${configs.project_name}`;
     // =>replace variables
     if (!configs.variables) configs.variables = {};
 
-    configs = await advancedLoadConfigs(configs, envPath) as any;
-    // =>remove disabled sub domains
-    configs.sub_domains = (configs.sub_domains as SubDomain[]).filter(i => !i.disabled);
-    // console.log('configs:', configs)
     return configs;
 }
 
-async function advancedLoadConfigs(configs: object, envPath: string) {
-    let newConfigs = await TEM.renderString(fs.readFileSync(envPath).toString(), { data: configs });
-
-    let newConfigsJson = JSON.parse(newConfigs.data);
-    for (const key of Object.keys(newConfigsJson)) {
-        configs[key] = newConfigsJson[key];
+async function _setConfigsVariables(configs: ProjectConfigs, vars: object) {
+    const parseString = (str: string) => {
+        let matches = str.match(/\{\{\s*[\w\d\._]+\s*\}\}/g);
+        // console.log(vars)
+        if (matches) {
+            // console.log(matches)
+            for (const match of matches) {
+                // =>extract var name
+                let varName = match.replace('{{', '').replace('}}', '').trim();
+                if (vars[varName]) {
+                    str = str.replace(match, vars[varName]);
+                }
+            }
+        }
+        return str;
     }
-
-
+    for (const key of Object.keys(configs)) {
+        if (typeof configs[key] === 'object') {
+            configs[key] = await _setConfigsVariables(configs[key], vars);
+        } else if (Array.isArray(configs[key])) {
+            for (let conf of configs[key]) {
+                if (typeof conf === 'string') {
+                    conf = parseString(conf);
+                }
+            }
+        } else {
+            if (typeof configs[key] === 'string') {
+                configs[key] = parseString(configs[key]);
+            }
+        }
+    }
 
     return configs;
 }
 
-export function loadSubDomains(configs: ConfigsObject): SubDomain[] {
-    return configs.sub_domains ?? [] as SubDomain[];
+function mergeConfigs(extendConfigs: ProjectConfigs, newConfig: ProjectConfigs): ProjectConfigs {
+    newConfig = mergeDeep<ProjectConfigs>(newConfig, extendConfigs);
+    if (newConfig.project) {
+        newConfig.project.extends = undefined;
+    }
+    return newConfig;
 }
 
+function mergeDeep<T = object>(target: T, needToMerge: T) {
 
-export async function stopContainers(names?: string[], isRemove = false, configs?: ConfigsObject) {
-    // =>load all configs
-    if (!configs) {
-        configs = await loadAllConfig();
-    }
-    if (names) {
-        LOG.info(`Stopping '${names.join(', ')}' Services...`);
-        for (const name of names) {
-            // =>if remove container
-            if (isRemove && await OS.shell(`${configs.docker_compose_command} stop ${name}`, configs.dist_path) !== 0) {
-                return false;
-            }
-            // =>if just stop
-            else {
-                if (!isRemove && await OS.shell(`${configs.docker_compose_command} rm  ${name}`, configs.dist_path) !== 0) return false;
-            }
-        }
-    } else {
-        LOG.info('Stopping All Services...');
-        // =>if remove container
-        if (isRemove && await OS.shell(`${configs.docker_compose_command} down --remove-orphans`, configs.dist_path) !== 0) {
-            return false;
-        }
-        // =>if just stop
+    for (const key of Object.keys(needToMerge)) {
+        if (target[key] === undefined) target[key] = needToMerge[key];
         else {
-            if (!isRemove && await OS.shell(`${configs.docker_compose_command} rm -s `, configs.dist_path) !== 0) return false;
+            if (typeof needToMerge[key] === 'object') {
+                target[key] = mergeDeep(target[key], needToMerge[key]);
+            }
         }
-
-        return true;
     }
+    return target;
 }
 
-export function clone(obj: any) {
-    return JSON.parse(JSON.stringify(obj));
+
+// export function loadSubDomains(configs: ConfigsObject): Service[] {
+//     return configs.sub_domains ?? [] as Service[];
+// }
+
+
+export async function stopContainers(configs: ProjectConfigs, names: string[], isRemove = false, containerType: 'service' | 'storage' = 'service') {
+    for (const name of names) {
+        let containerName: string;
+        if (containerType === 'service') {
+            containerName = makeDockerServiceName(name, configs);
+        }
+        else if (containerType === 'storage') {
+            containerName = makeDockerStorageName(name, configs);
+        }
+        // =>check exist such container
+        let checkRes = await OS.exec(`sudo docker container port ${containerName}`);
+        // console.log(checkRes)
+        if (checkRes.stderr.indexOf('No such container') > -1) {
+            continue;
+        }
+        if (containerType === 'service') {
+            LOG.info(`Stopping ${name} Service...`);
+        } else if (containerType === 'storage') {
+            LOG.info(`Stopping ${name} Storage...`);
+        }
+        await OS.shell(`sudo docker stop ${containerName}`);
+        if (isRemove) {
+            await OS.shell(`sudo docker rm ${containerName}`);
+        }
+    }
+
 }
 
-export async function generateSSL(configs: ConfigsObject) {
+export function clone<T = any>(obj: T) {
+    return JSON.parse(JSON.stringify(obj)) as T;
+}
+
+export async function generateSSL(configs: ProjectConfigs, env = 'prod') {
+    const sslPath = path.join(configs._env.ssl_path, env);
     // =>root path
-    const rootSSLPath = path.join(configs.ssl_path, 'root');
+    const rootSSLPath = path.join(sslPath, 'root');
     fs.mkdirSync(rootSSLPath, { recursive: true });
     // =>wildcard path
-    const wildcardSSLPath = path.join(configs.ssl_path, 'wildcard');
+    const wildcardSSLPath = path.join(sslPath, 'wildcard');
     fs.mkdirSync(wildcardSSLPath, { recursive: true });
     // =>check ssl root files exist
     if (!fs.existsSync(path.join(rootSSLPath, 'cert.crt')) || !fs.existsSync(path.join(rootSSLPath, 'cert.key'))) {
         LOG.info('generating self signed ssl files (root domain) ...');
-        if (!await _generateSelfSignedSSl(rootSSLPath, configs.domain_name, configs.domain_name)) return false;
-        await OS.shell(`sudo chmod -R 777 ${configs.ssl_path}`);
+        if (!await _generateSelfSignedSSl(rootSSLPath, configs.domain.name, configs.domain.name)) return false;
+        await OS.shell(`sudo chmod -R 777 ${sslPath}`);
     }
     // =>check ssl wildcard (sub domains) files exist
     if (!fs.existsSync(path.join(wildcardSSLPath, 'cert.crt')) || !fs.existsSync(path.join(wildcardSSLPath, 'cert.key'))) {
         LOG.info('generating self signed ssl files (wildcard) ...');
-        if (!await _generateSelfSignedSSl(wildcardSSLPath, configs.domain_name, '*.' + configs.domain_name)) return false;
-        await OS.shell(`sudo chmod -R 777 ${configs.ssl_path}`);
+        if (!await _generateSelfSignedSSl(wildcardSSLPath, configs.domain.name, '*.' + configs.domain.name)) return false;
+        await OS.shell(`sudo chmod -R 777 ${sslPath}`);
     }
     // =>copy ssl folder to .dist
-    OS.copyDirectory(configs.ssl_path, path.join(configs.dist_path, 'ssl'));
+    OS.copyDirectory(sslPath, path.join(configs._env.dist_path, 'ssl'));
 }
 
 async function _generateSelfSignedSSl(sslPath: string, domainName: string, commonName: string) {
@@ -167,10 +200,170 @@ rm "${path.join(sslPath, 'cert.csr')}"
 }
 
 
-export async function makeDockerServiceNameAsValid(name: string, configs: ConfigsObject) {
-    if (await OS.checkCommand('docker -v', 'version 20')) {
-        return configs.project_name + '-' + name + '-1';
-    } else {
-        return configs.project_name + '_' + name + '_1';
+export function makeDockerServiceName(name: string, configs: ProjectConfigs) {
+    return configs.project.name + '_' + configs.project._env + '_' + name;
+}
+
+export function makeDockerStorageName(name: string, configs: ProjectConfigs) {
+    return configs.project.name + '_' + configs.project._env + '_' + name;
+}
+
+export function makeServiceImageName(name: string, configs: ProjectConfigs) {
+    return `${configs.project.name}_${name}:${configs.project.version ?? '1'}`;
+}
+
+export async function runDockerContainer(configs: ProjectConfigs, options: {
+    name: string;
+    ports?: { host: number; container: number, host_ip?: string }[];
+    image: string;
+    volumes?: string[];
+    mounts?: string[];
+    envs?: object;
+    hosts?: string[];
+    links?: string[];
+    networkAlias?: string;
+    hostname?: string;
+    capAdd?: string;
+    argvs?: string[];
+    healthCheck?: HealthCheck;
+}) {
+    let command = `sudo docker run --name ${options.name} -d --restart=unless-stopped`;
+    if (options.ports) {
+        for (const port of options.ports) {
+            command += ` -p "${port.host_ip ? port.host_ip + ':' : ''}${port.host}:${port.container}"`;
+        }
     }
+    if (options.capAdd) {
+        command += ` --cap-add=${options.capAdd}`;
+    }
+    if (options.hostname) {
+        command += ` --hostname "${options.hostname}"`;
+    }
+    if (options.networkAlias) {
+        command += ` --network-alias "${options.networkAlias}"`;
+    }
+    if (options.volumes) {
+        for (let vol of options.volumes) {
+            let vols = vol.split(':');
+            vols[0] = path.join(configs._env.dist_path, vols[0]);
+            vol = vols.join(':');
+            command += ` --volume "${vol}"`;
+        }
+    }
+
+    if (options.mounts) {
+        for (const vol of options.mounts) {
+            let vols = vol.split(':');
+            vols[0] = path.join(configs._env.dist_path, vols[0]);
+            command += ` --mount type=bind,src="${vols[0]}",dst="${vols[1]}"`;
+        }
+    }
+    if (options.links) {
+        for (const link of options.links) {
+            command += ` --link=${link}`;
+        }
+    }
+    if (options.hosts) {
+        for (const host of options.hosts) {
+            command += ` --add-host="${host}"`;
+        }
+    }
+    if (options.envs) {
+        for (const key of Object.keys(options.envs)) {
+            command += ` --env "${key}=${options.envs[key]}"`;
+        }
+    }
+    if (options.healthCheck) {
+        if (!options.healthCheck.retries) options.healthCheck.retries = 30;
+        if (!options.healthCheck.timeout) options.healthCheck.timeout = '30s';
+        if (!options.healthCheck.interval) options.healthCheck.interval = '30s';
+        command += ` --health-cmd "${options.healthCheck.test}" --health-interval=${options.healthCheck.interval} --health-retries=${options.healthCheck.retries}`;
+    }
+
+    command += ' ' + options.image;
+    if (options.argvs) {
+        for (const argv of options.argvs) {
+            command += ` ${argv}`;
+        }
+    }
+    if (configs.project.debug) {
+        console.log(command)
+    }
+    let res = await OS.shell(command, configs._env.dist_path);
+
+    return res;
+}
+
+export async function loadProfiles() {
+    return await ENV.load<Profile[]>('profiles', []);
+}
+
+export async function checkExistDockerContainerByName(name: string) {
+    let res = await OS.commandResult(`echo "$(sudo docker ps -a -q -f name=${name})"`);
+    // console.log(name, res)
+    return String(res).trim().length > 0;
+}
+
+export async function findProfileByName(name?: string): Promise<Profile> {
+    let profiles = await loadProfiles();
+    let profile = profiles.find(i => i.name === name);
+    if (profile) return profile;
+    if (profiles.length > 0) return profiles[0];
+
+    return undefined;
+}
+
+export function convertNameToContainerName(configs: ProjectConfigs, names: string[]) {
+    let containerNames: string[] = [];
+    for (let name of names) {
+        // =>find link name in storages
+        if (Object.keys(configs.storages).includes(name)) {
+            containerNames.push(makeDockerStorageName(name, configs));
+        }
+        // =>find link name in services
+        else if (Object.keys(configs.services).includes(name)) {
+            containerNames.push(makeDockerServiceName(name, configs));
+        }
+    }
+
+    return containerNames;
+}
+
+export async function setContainersHealthy(configs: ProjectConfigs) {
+    // =>iterate storages
+    for (const name of Object.keys(configs.storages)) {
+        // =>check if before set status
+        if (configs.storages[name]._health_status === 'healthy' || configs.storages[name]._health_status === 'unhealthy') continue;
+        // =>fetch status
+        configs.storages[name]._health_status = await checkContainerHealthy(configs, makeDockerStorageName(name, configs));
+    }
+    // console.log('storages:', configs.storages)
+    // =>iterate services
+    for (const name of Object.keys(configs.services)) {
+        // =>check if before set status
+        if (configs.services[name].disabled || configs.services[name].docker._health_status === 'healthy' || configs.services[name].docker._health_status === 'unhealthy') continue;
+        // =>fetch status
+        let res = await checkContainerHealthy(configs, makeDockerServiceName(name, configs));
+        if (res) {
+            configs.services[name].docker._health_status = res;
+        }
+    }
+
+    return configs;
+}
+export async function checkContainerHealthy(configs: ProjectConfigs, containerName: string) {
+    let status: DockerContainerHealthType;
+    let json: object;
+    try {
+        let res = await OS.exec(`sudo docker inspect --format='{{json .State.Health}}' ${containerName}`);
+        // if (containerName == 'dadgam_local_mongo') {
+        //     console.log(res.stdout.substring(1, res.stdout.length - 1))
+        // }
+        json = JSON.parse(res.stdout.substring(1, res.stdout.length - 1));
+        if (json) {
+            status = json['Status'] || 'unhealthy';
+        }
+    } catch (e) { }
+
+    return status;
 }

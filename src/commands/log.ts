@@ -1,6 +1,6 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { loadAllConfig, loadSubDomains, makeDockerServiceNameAsValid, stopContainers } from '../common';
-import { CommandArgvName, CommandName, ConfigsObject, Database } from '../types';
+import { loadAllConfig, stopContainers } from '../common';
+import { CommandArgvName, CommandName, ProjectConfigs, Storage } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as LOG from '@dat/lib/log';
@@ -16,7 +16,7 @@ import * as TEM from '@dat/lib/template';
 
 export class LogCommand extends CliCommand<CommandName, CommandArgvName> implements OnImplement {
 
-    configs: ConfigsObject;
+    configs: ProjectConfigs;
     projectConfigsJsFiles: {} = {};
 
     get name(): CommandName {
@@ -58,8 +58,8 @@ export class LogCommand extends CliCommand<CommandName, CommandArgvName> impleme
             // await makeDockerServiceNameAsValid(this.getArgv('service'), this.configs);
         }
         // =>show log docker composes
-        const command = `${this.configs.docker_compose_command} logs ${this.hasArgv('follow') ? '-f' : ''} ${this.hasArgv('service') ? serviceName : ''}`;
-        await OS.shell(command, this.configs.dist_path);
+        // const command = `${this.configs.docker_compose_command} logs ${this.hasArgv('follow') ? '-f' : ''} ${this.hasArgv('service') ? serviceName : ''}`;
+        // await OS.shell(command, this.configs.dist_path);FIXME:
 
         return true;
     }

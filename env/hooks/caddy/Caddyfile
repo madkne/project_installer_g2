@@ -1,26 +1,37 @@
 {
-default_sni {{domain_name}}
+default_sni {{domain.name}}
 http_port 80
-{% if ssl_enabled %}
+{% if domain.ssl_enabled %}
 https_port 443
 {% endif %}
 email admin@gmail.com
 }
-{% for sub in sub_domains %}
-{{ sub.subdomain + '.' if sub.subdomain.length > 0 else ''}}{{domain_name}}, www.{{sub.subdomain + '.' if
-sub.subdomain.length > 0 else ''}}{{domain_name}} {
-{% if ssl_enabled %}
-{% if sub.subdomain.length == 0 %}
-tls /etc/cert/root/cert.crt /etc/cert/root/cert.key
+{% for key, val in services %}
+{{ val.sub_domain + '.' if val.sub_domain.length > 0 and val.sub_domain != '.' else ''}}{{domain.name}},
+www.{{val.sub_domain + '.' if
+val.sub_domain.length > 0 and val.sub_domain != '.' else ''}}{{domain.name}} {
+{% if domain.ssl_enabled %}
 
+{% if val.sub_domain.length == 0 or val.sub_domain == '.' %}
+tls /etc/cert/root/cert.crt /etc/cert/root/cert.key
 {% else %}
 tls /etc/cert/wildcard/cert.crt /etc/cert/wildcard/cert.key
 {% endif %}
 {% endif %}
-reverse_proxy nginx:{{'443' if ssl_enabled else '80'}} {
+reverse_proxy nginx:{{'443' if domain.ssl_enabled else '80'}} {
 transport http {
 tls_insecure_skip_verify
 }
 }
 }
 {% endfor %}
+
+{% if domain.ssl_enabled %}
+{% for key, val in services %}
+http://{{ val.sub_domain + '.' if val.sub_domain.length > 0 and val.sub_domain != '.' else ''}}{{domain.name}},
+http://www.{{val.sub_domain + '.' if
+val.sub_domain.length > 0 and val.sub_domain != '.' else ''}}{{domain.name}} {
+redir https://{host}{uri}
+}
+{% endfor %}
+{% endif %}

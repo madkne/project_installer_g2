@@ -1,35 +1,73 @@
-export type CommandName = 'install' | 'stop' | 'log';
-export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log';
+export type CommandName = 'install' | 'stop' | 'log' | 'add' | 'import';
+export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log' | 'name' | 'path' | 'profile' | 'storages' | 'all-services' | 'all-storages';
 
-export type ConfigVariableKey = 'git_username' | 'git_password' | 'docker_registery' | 'backend_project_docker_image' | 'frontend_project_docker_image' | 'env_path' | 'dist_path' | 'domain_name' | 'ssl_enabled' | 'databases' | 'domain_name' | 'sub_domains' | 'variables' | 'ssl_path' | 'docker_compose_command' | 'project_name' | 'dockerfiles_path';
-export type ConfigsObject = { [k in ConfigVariableKey]: any };
+export type ConfigVariableKey = 'git_username' | 'git_password' | 'env_path' | 'dist_path' | 'dockerfiles_path' | 'ssl_path';
+
+export type ServiceConfigsFunctionName = 'compileFiles' | 'init' | 'beforeBuild' | 'finish';
+
+export type DockerContainerHealthType = 'starting' | 'healthy' | 'unhealthy' | 'stopped';
+
+export interface ProjectConfigs {
+    _env: { [k in ConfigVariableKey]: any };
+    project: {
+        name: string;
+        version?: number;
+        extends?: string;
+        /**
+         * @default 'docker.io'
+         */
+        docker_register?: string;
+        debug?: boolean;
+
+        _env?: string;
+    };
+    domain: {
+        name: string;
+        ssl_enabled?: boolean;
+    };
+    services: { [k: string]: Service };
+    storages?: { [k: string]: Storage };
+    variables?: { [k: string]: any };
+}
 
 export type ConfigMode = 'dev' | 'prod';
 
-export interface SubDomain {
-    subdomain: string;
-    cloneUrl: string;
-    /**
-     * @default master
-     */
-    branch?: string;
-    name: string;
-    volumes?: string[];
-    /**
-     * @default 80
-     */
-    port: number;
-    envs?: { [k: string]: any };
-    depends?: string[];
+export interface Service {
+    sub_domain: string;
     disabled?: boolean;
-    healthcheck?: AppHealthCheck;
-    locations?: AppLocation[];
-    /**
-     * in default same as port
-     */
-    exposePort?: number;
+    clone: {
+        url: string;
+        /**
+         * @default master
+         */
+        branch?: string;
+    };
+    docker: {
+        /**
+         * @default true
+         */
+        build_kit_enabled?: boolean;
+        /**
+         * @default 80
+         */
+        port: string;
+        volumes?: string[];
+        envs?: { [k: string]: any };
+        links?: string[];
+        hosts?: string[];
+        health_check?: HealthCheck;
+        mounts?: string[];
+        depends?: string[];
 
-    __hasEnvs?: boolean;
+        _expose_port?: number;
+        _host_port?: number;
+        _depend_containers?: string[];
+        _health_status?: DockerContainerHealthType;
+    };
+    web: {
+        locations: AppLocation[];
+    };
+
 }
 
 export interface AppLocation {
@@ -39,21 +77,13 @@ export interface AppLocation {
     internal?: boolean;
 }
 
-export interface AppHealthCheck {
-    test: string[];
-    timeout?: number;
-    retries?: number;
-    _test_str?: string;
-}
 
-export interface Database {
+export interface Storage {
     type: "mysql" | "mongo" | "redis";
     port: number;
-    dbname?: string;
-    mysql_db_names: string[];
-    name: string;
+    init_db_names: string[];
     root_password?: string;
-    allow_public_db?: boolean;
+    allow_public?: boolean;
     /**
      * @default UTC
      */
@@ -61,15 +91,35 @@ export interface Database {
     /**
      * auto filled
      */
-    command?: string;
+    // command?: string;
     image?: string;
     realPort?: number;
     volumes?: string[];
     envs?: object;
+    argvs?: string[];
     __has_envs?: boolean;
-    healthcheck?: {
-        test: string;
-        timeout: number;
-        retries: number;
-    };
+    health_check?: HealthCheck;
+    _health_status?: DockerContainerHealthType;
+}
+
+export interface Profile {
+    name: string;
+    path: string;
+    defaultEnv?: string;
+}
+
+export interface HealthCheck {
+    test: string;
+    /**
+     * @default 30s
+     */
+    timeout?: string;
+    /**
+     * @default 30s
+     */
+    interval?: string;
+    /**
+     * @default 30
+     */
+    retries?: number;
 }

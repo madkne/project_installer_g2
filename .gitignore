@@ -2,8 +2,4 @@
 .dist
 package-lock.json
 node_modules
-env/ssl/*
-.env
-.env.json
-.env.prod.json
-.env.dev.json
+profiles

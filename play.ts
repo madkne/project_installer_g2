@@ -11,21 +11,25 @@ import { InstallCommand } from "./src/commands/install";
 import { loadAllConfig } from "./src/common";
 import { StopCommand } from "./src/commands/stop";
 import { LogCommand } from "./src/commands/log";
+import { AddCommand } from "./src/commands/add";
+import { ImportCommand } from "./src/commands/import";
 
 /************************************* */
-const VERSION = '0.63';
+const VERSION = '0.80';
 
 /************************************* */
 export async function main(): Promise<number> {
    LOG.clear();
-   let configs = await loadAllConfig();
-   LOG.success(`*** ${configs.project_name} Installer - version ${VERSION} ***`);
+   // let configs = await loadAllConfig();
+   LOG.success(`*** project Installer - version ${VERSION} ***`);
    await SET.showStatistics();
 
    await ARG.cli();
    InstallCommand
+   AddCommand
    StopCommand
    LogCommand
+   ImportCommand
 
    return 0;
 }

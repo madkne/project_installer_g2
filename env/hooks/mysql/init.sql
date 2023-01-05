@@ -1,7 +1,7 @@
 -- # create databases
 {% for db in databases %}
 {% if db.type == 'mysql' %}
-{% for dbname in db.mysql_db_names %}
+{% for dbname in db.init_db_names %}
 CREATE DATABASE IF NOT EXISTS `{{dbname}}`;
 {% endfor %}
 {% endif %}
