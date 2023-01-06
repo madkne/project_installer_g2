@@ -108,7 +108,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         }
         // =>if ssl enabled
         if (this.configs.domain.ssl_enabled) {
-            await generateSSL(this.configs, env);
+            await generateSSL(this.configs);
         }
         // =>get git username, if not
         if (!this.configs._env.git_username || this.configs._env.git_username.length === 0) {
@@ -136,8 +136,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         await this.cloneProjectServices();
 
         // =>create hook dirs
-        let envHooksPath = path.join(this.configs._env.env_path, 'hooks');
-        let distHooksPath = path.join(this.configs._env.dist_path, 'hooks');
+
         let hookDirs = ['mysql', 'nginx', 'nginx/conf'];
         for (const d of hookDirs) {
             fs.mkdirSync(path.join(this.configs._env.dist_path, 'hooks', d), { recursive: true });
@@ -147,16 +146,20 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             'mysql/my.cnf',
             'nginx/uwsgi_params',
             'nginx/nginx.conf',
-            'nginx/conf/servers.conf',
+            // 'nginx/conf/servers.conf',
         ];
         for (const f of hookFiles) {
-            await TEM.saveRenderFile(path.join(envHooksPath, f), path.dirname(path.join(distHooksPath, f)), { data: this.configs, noCache: true });
+            await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, f), path.dirname(path.join(this.configs._env.dist_hooks_path, f)), { data: this.configs, noCache: true });
         }
         // =>render custom files
         let customFiles = fs.readdirSync(path.join(this.profile.path, 'custom'), { withFileTypes: true });
         fs.mkdirSync(path.join(this.configs._env.dist_path, 'custom'), { recursive: true });
         for (const f of customFiles) {
             await TEM.saveRenderFile(path.join(this.profile.path, 'custom', f.name), path.join(this.configs._env.dist_path, 'custom'), { data: this.configs, noCache: true });
+        }
+        // =>if nginx is down
+        if (!await checkExistDockerContainerByName(makeDockerServiceName('nginx', this.configs))) {
+            await this.restartNginx();
         }
         // =>normalize dbs
         await this.normalizeStorages();
@@ -201,7 +204,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         // =>stop storages, if 'rc' flag
         if (this.hasArgv('remove-containers')) {
             await stopContainers(this.configs, Object.keys(this.configs.storages), true, 'storage');
-            await stopContainers(this.configs, ['nginx'], true);
+            await this.restartNginx();
         }
         // =>up storages docker containers
         LOG.info('Running storages...');
@@ -286,44 +289,14 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             this.configs.services[name].docker._health_status = await checkContainerHealthy(this.configs, containerName);
             // =>get service ip
             service.docker._ip = await getContainerIP(containerName);
+            // =>update nginx
+            await this.updateNginxConfigs();
             // =>remove service from processing
             processingServices.splice(processingServices.indexOf(name), 1);
 
         }
-        // =>collect nginx static files
-        await this.collectNginxStaticFiles();
-        // =>rerender nginx server conf
-        await TEM.saveRenderFile(path.join(envHooksPath, 'nginx/conf/servers.conf'), path.dirname(path.join(distHooksPath, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
-        // =>up nginx
-        let webServerPorts = [{ host: 80, container: 80 }];
-        const nginxContainerName = makeDockerServiceName('nginx', this.configs);
-        if (!await checkExistDockerContainerByName(nginxContainerName)) {
-            let nginxVolumes = [
-                './hooks/nginx/nginx.conf:/etc/nginx/nginx.conf:ro',
-                './hooks/nginx/conf:/etc/nginx/conf.d',
-                './hooks/nginx/uwsgi_params:/etc/nginx/uwsgi_params',
-                './data/static:/static',
-                './data/media:/media',
-                './data/nginx/logs:/var/log/nginx',
-                './data/nginx/static:/var/static',
-            ];
-            // =>if ssl enabled
-            if (this.configs.domain.ssl_enabled) {
-                nginxVolumes.push(`../ssl/${env}:/etc/nginx/certs`);
-                webServerPorts.push({ host: 443, container: 443 });
-            }
-
-            if (await runDockerContainer(this.configs, {
-                name: nginxContainerName,
-                image: this.configs.project.docker_register + '/nginx:stable',
-                volumes: nginxVolumes,
-                // networkAlias: this.configs.domain.name,
-                // links: this.serviceNames.map(i => makeDockerServiceName(i, this.configs)),
-                ports: webServerPorts,
-                network: 'host',
-            }) !== 0) {
-                return false;
-            }
+        if (!await this.restartNginx()) {
+            return false;
         }
         if (this.configs.project.debug) {
             console.log(JSON.stringify(this.configs, null, 2));
@@ -353,8 +326,9 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         for (const srv of this.serviceNames) {
             // =>copy error html files
             for (const name of Object.keys(this.configs.services[srv].web._abs_error_pages)) {
-                // =>copy 501.html file
-                fs.copyFileSync(this.configs.services[srv].web._abs_error_pages[name], path.join(nginxStaticsPath, path.basename(this.configs.services[srv].web._abs_error_pages[name])));
+                // =>copy 50x.html file
+                fs.copyFileSync(this.configs.services[srv].web._abs_error_pages[name], path.join(nginxStaticsPath, name + '.html'));
+                this.configs.services[srv].web.error_pages[name] = name + '.html';
             }
 
         }
@@ -563,6 +537,58 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         let serviceNames = this.getArgv(commandName) ? this.getArgv(commandName).split(',').map(i => i.trim()).filter(i => allServiceNames.includes(i)) : allServiceNames;
 
         return serviceNames;
+    }
+    /**************************** */
+    async restartNginx() {
+        if (await checkExistDockerContainerByName(makeDockerServiceName('nginx', this.configs))) {
+            await stopContainers(this.configs, ['nginx'], true, 'web');
+        }
+        // =>collect nginx static files
+        await this.collectNginxStaticFiles();
+        await this.updateNginxConfigs(false);
+        // =>rerender nginx server conf
+        await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
+        // =>up nginx
+        let webServerPorts = [{ host: 80, container: 80 }];
+        const nginxContainerName = makeDockerServiceName('nginx', this.configs);
+        if (!await checkExistDockerContainerByName(nginxContainerName)) {
+            let nginxVolumes = [
+                './hooks/nginx/nginx.conf:/etc/nginx/nginx.conf:ro',
+                './hooks/nginx/conf:/etc/nginx/conf.d',
+                './hooks/nginx/uwsgi_params:/etc/nginx/uwsgi_params',
+                './data/static:/static',
+                './data/media:/media',
+                './data/nginx/logs:/var/log/nginx',
+                './data/nginx/static:/var/static',
+            ];
+            // =>if ssl enabled
+            if (this.configs.domain.ssl_enabled) {
+                nginxVolumes.push(`../ssl/${this.configs.project._env}:/etc/nginx/certs`);
+                webServerPorts.push({ host: 443, container: 443 });
+            }
+
+            if (await runDockerContainer(this.configs, {
+                name: nginxContainerName,
+                image: this.configs.project.docker_register + '/nginx:stable',
+                volumes: nginxVolumes,
+                // networkAlias: this.configs.domain.name,
+                // links: this.serviceNames.map(i => makeDockerServiceName(i, this.configs)),
+                ports: webServerPorts,
+                network: 'host',
+            }) !== 0) {
+                return false;
+            }
+        }
+    }
+    /**************************** */
+    async updateNginxConfigs(restartContainer = true) {
+        // =>rerender nginx server conf
+        await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
+        if (restartContainer) {
+            try {
+                await OS.exec(`sudo docker restart ${makeDockerServiceName('nginx', this.configs)}`)
+            } catch (e) { }
+        }
     }
 
 } 

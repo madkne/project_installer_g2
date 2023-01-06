@@ -12,6 +12,7 @@ clone, build, and run your dockerized project with nginx on multiple sub domains
 - auto ssl generation
 - supported real client IP
 - supported maintenance mode
+- maximum uptime
 
 
 ## supported databases

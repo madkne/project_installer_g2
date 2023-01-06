@@ -20,6 +20,8 @@ export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<
     configs._env.dist_path = path.join(profilePath, '.dist');
     configs._env.env_path = path.join(await OS.cwd(), 'env');
     configs._env.ssl_path = path.join(profilePath, 'ssl');
+    configs._env.env_hooks_path = path.join(configs._env.env_path, 'hooks');
+    configs._env.dist_hooks_path = path.join(configs._env.dist_path, 'hooks');
     // =>create dirs
     fs.mkdirSync(configs._env.ssl_path, { recursive: true });
     configs._env.dockerfiles_path = path.join(configs._env.dist_path, 'dockerfiles');
@@ -124,10 +126,10 @@ function mergeDeep<T = object>(target: T, needToMerge: T) {
 // }
 
 
-export async function stopContainers(configs: ProjectConfigs, names: string[], isRemove = false, containerType: 'service' | 'storage' = 'service') {
+export async function stopContainers(configs: ProjectConfigs, names: string[], isRemove = false, containerType: 'service' | 'storage' | 'web' = 'service') {
     for (const name of names) {
         let containerName: string;
-        if (containerType === 'service') {
+        if (containerType === 'service' || containerType === 'web') {
             containerName = makeDockerServiceName(name, configs);
         }
         else if (containerType === 'storage') {
@@ -156,8 +158,8 @@ export function clone<T = any>(obj: T) {
     return JSON.parse(JSON.stringify(obj)) as T;
 }
 
-export async function generateSSL(configs: ProjectConfigs, env = 'prod') {
-    const sslPath = path.join(configs._env.ssl_path, env);
+export async function generateSSL(configs: ProjectConfigs) {
+    const sslPath = path.join(configs._env.ssl_path, configs.project._env);
     // =>root path
     const rootSSLPath = path.join(sslPath, 'root');
     fs.mkdirSync(rootSSLPath, { recursive: true });
@@ -309,8 +311,8 @@ export async function loadProfiles() {
     return await ENV.load<Profile[]>('profiles', []);
 }
 
-export async function checkExistDockerContainerByName(name: string) {
-    let res = await OS.commandResult(`echo "$(sudo docker ps -a -q -f name=${name})"`);
+export async function checkExistDockerContainerByName(containerName: string) {
+    let res = await OS.commandResult(`echo "$(sudo docker ps -a -q -f name=${containerName})"`);
     // console.log(name, res)
     return String(res).trim().length > 0;
 }
