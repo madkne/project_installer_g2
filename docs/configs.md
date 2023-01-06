@@ -11,23 +11,32 @@
 | variables | NO | object | any other variables that applications maybe to needs |
 <!-- | redirects | NO | Array of [Redirect](#redirect) | define different redirects| -->
 
-## Sub domain
+## Service
 
 |property| required | description|
 |-------| ------- | --------- |
-| subdomain | **YES** | name of subdomain like 'app' |
+| sub_domain | **YES** | name of subdomain like 'app' |
 |disabled | NO | ignore this subdomain |
 | healthcheck | NO | add health check on app| 
 | locations| NO | nginx location directive |
 
+### docker
 
-### `locations`
+### web
+#### `locations`
 |property| required | description|
 |-------| ------- | --------- |
 |url|**YES**|-
 |modifier| NO |Having a modifier in the location block will allow NGINX to treat a URL differently.|
 |alias| NO | final path|
 internal| NO | This tells nginx it's not accessible from the outside|
+
+#### `maintenance`
+|property| required | description|
+|-------| ------- | --------- |
+|enabled|**YES**|is enabled or not
+|filename| NO |default is `503.html` in `custom` directory|
+allowed_ips| NO | which IPs allow to see real site like `192.168.1.0/24` |
 
 ### `healthcheck`
 

@@ -10,13 +10,15 @@ clone, build, and run your dockerized project with nginx on multiple sub domains
 - supported project profiles
 - supported multiple storages
 - auto ssl generation
+- supported real client IP
+- supported maintenance mode
 
 
 ## supported databases
 
-- mysql
-- redis
-- mongo
+- mysql (default: v8.0)
+- redis (default: alpine)
+- mongo (default: latest)
 	
 ## Requirements
  - docker

@@ -1,4 +1,4 @@
-import { ConfigMode, ConfigVariableKey, DockerContainerHealthType, HealthCheck, Profile, ProjectConfigs, Service } from "./types";
+import { ConfigMode, ConfigVariableKey, DockerContainerHealthType, HealthCheck, NginxErrorPage, Profile, ProjectConfigs, Service } from "./types";
 import * as ENV from '@dat/lib/env';
 import * as LOG from '@dat/lib/log';
 import * as fs from 'fs';
@@ -6,6 +6,10 @@ import * as path from 'path';
 import * as OS from '@dat/lib/os';
 import * as TEM from '@dat/lib/template';
 import * as yml from 'js-yaml';
+
+
+export const NginxErrorPageCodes: NginxErrorPage[] = ['404', '500', '501', '502', '503', '504'];
+
 
 export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<ProjectConfigs> {
     // =>read configs.json file
@@ -16,9 +20,12 @@ export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<
     configs._env.dist_path = path.join(profilePath, '.dist');
     configs._env.env_path = path.join(await OS.cwd(), 'env');
     configs._env.ssl_path = path.join(profilePath, 'ssl');
+    // =>create dirs
     fs.mkdirSync(configs._env.ssl_path, { recursive: true });
     configs._env.dockerfiles_path = path.join(configs._env.dist_path, 'dockerfiles');
     fs.mkdirSync(configs._env.dockerfiles_path, { recursive: true });
+    fs.mkdirSync(path.join(configs._env.dist_path, 'data', 'nginx'), { recursive: true });
+    await OS.exec(`sudo chmod 777 -R ${path.join(configs._env.dist_path, 'data', 'nginx')}`);
     // =set variables in configs
     configs = await _setConfigsVariables(configs, configs.variables);
     // =>set defaults
@@ -225,6 +232,7 @@ export async function runDockerContainer(configs: ProjectConfigs, options: {
     hostname?: string;
     capAdd?: string;
     argvs?: string[];
+    network?: string;
     healthCheck?: HealthCheck;
 }) {
     let command = `sudo docker run --name ${options.name} -d --restart=unless-stopped`;
@@ -241,6 +249,9 @@ export async function runDockerContainer(configs: ProjectConfigs, options: {
     }
     if (options.networkAlias) {
         command += ` --network-alias "${options.networkAlias}"`;
+    }
+    if (options.network) {
+        command += ` --network "${options.network}"`;
     }
     if (options.volumes) {
         for (let vol of options.volumes) {
@@ -366,4 +377,25 @@ export async function checkContainerHealthy(configs: ProjectConfigs, containerNa
     } catch (e) { }
 
     return status;
+}
+
+export function copyExistFile(sourcePaths: string[], destPath: string) {
+    for (const p of sourcePaths) {
+        if (fs.existsSync(p)) {
+            fs.copyFileSync(p, destPath);
+            break;
+        }
+    }
+}
+
+export async function getContainerIP(containerName: string) {
+    try {
+        let res = await OS.commandResult(`sudo docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ${containerName}`);
+        if (!res || res.trim().length < 1) {
+            res = await OS.commandResult(`sudo docker inspect --format '{{ .NetworkSettings.IPAddress }}' ${containerName}`);
+        }
+        return res.trim();
+    } catch (e) {
+        return undefined;
+    }
 }

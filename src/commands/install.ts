@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, findProfileByName, generateSSL, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, runDockerContainer, setContainersHealthy, stopContainers } from '../common';
+import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, runDockerContainer, setContainersHealthy, stopContainers } from '../common';
 import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -130,6 +130,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             await OS.shell(`sudo docker rmi $(sudo docker images | grep "^<none" | awk '{print $3}')
             `)
         }
+        // =>normalize services
+        await this.normalizeServices();
         // clone projects in dist folder
         await this.cloneProjectServices();
 
@@ -144,10 +146,17 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         let hookFiles = [
             'mysql/my.cnf',
             'nginx/uwsgi_params',
-            'nginx/conf/nginx.conf',
+            'nginx/nginx.conf',
+            'nginx/conf/servers.conf',
         ];
         for (const f of hookFiles) {
             await TEM.saveRenderFile(path.join(envHooksPath, f), path.dirname(path.join(distHooksPath, f)), { data: this.configs, noCache: true });
+        }
+        // =>render custom files
+        let customFiles = fs.readdirSync(path.join(this.profile.path, 'custom'), { withFileTypes: true });
+        fs.mkdirSync(path.join(this.configs._env.dist_path, 'custom'), { recursive: true });
+        for (const f of customFiles) {
+            await TEM.saveRenderFile(path.join(this.profile.path, 'custom', f.name), path.join(this.configs._env.dist_path, 'custom'), { data: this.configs, noCache: true });
         }
         // =>normalize dbs
         await this.normalizeStorages();
@@ -160,7 +169,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         if (this.hasArgv('skip-caching-build')) {
             noCacheBuildProjects = this.extractServiceNames('skip-caching-build');
         }
-
+        // console.log(JSON.stringify(this.configs, null, 2))
         // =>iterate services to build them
         for (const serviceName of this.serviceNames) {
             let service = this.configs.services[serviceName];
@@ -275,20 +284,28 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             }
             // =>check health status of container
             this.configs.services[name].docker._health_status = await checkContainerHealthy(this.configs, containerName);
+            // =>get service ip
+            service.docker._ip = await getContainerIP(containerName);
             // =>remove service from processing
             processingServices.splice(processingServices.indexOf(name), 1);
 
         }
+        // =>collect nginx static files
+        await this.collectNginxStaticFiles();
+        // =>rerender nginx server conf
+        await TEM.saveRenderFile(path.join(envHooksPath, 'nginx/conf/servers.conf'), path.dirname(path.join(distHooksPath, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
         // =>up nginx
         let webServerPorts = [{ host: 80, container: 80 }];
         const nginxContainerName = makeDockerServiceName('nginx', this.configs);
         if (!await checkExistDockerContainerByName(nginxContainerName)) {
             let nginxVolumes = [
+                './hooks/nginx/nginx.conf:/etc/nginx/nginx.conf:ro',
                 './hooks/nginx/conf:/etc/nginx/conf.d',
                 './hooks/nginx/uwsgi_params:/etc/nginx/uwsgi_params',
                 './data/static:/static',
                 './data/media:/media',
                 './data/nginx/logs:/var/log/nginx',
+                './data/nginx/static:/var/static',
             ];
             // =>if ssl enabled
             if (this.configs.domain.ssl_enabled) {
@@ -300,9 +317,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 name: nginxContainerName,
                 image: this.configs.project.docker_register + '/nginx:stable',
                 volumes: nginxVolumes,
-                networkAlias: this.configs.domain.name,
-                links: this.serviceNames.map(i => makeDockerServiceName(i, this.configs)),
+                // networkAlias: this.configs.domain.name,
+                // links: this.serviceNames.map(i => makeDockerServiceName(i, this.configs)),
                 ports: webServerPorts,
+                network: 'host',
             }) !== 0) {
                 return false;
             }
@@ -325,6 +343,21 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         LOG.success(`You must set '${this.configs.domain.name}' and the other sub domains on '/etc/hosts' file.\nYou can see project on http${this.configs.domain.ssl_enabled ? 's' : ''}://${this.configs.domain.name}`);
 
         return true;
+    }
+    /**************************** */
+    async collectNginxStaticFiles() {
+        const nginxStaticsPath = path.join(this.configs._env.dist_path, 'data', 'nginx', 'static');
+        // const customPath = path.join(this.profile.path, 'custom');
+        // const envStaticPath = path.join(this.configs._env.env_path, 'static');
+        fs.mkdirSync(nginxStaticsPath, { recursive: true });
+        for (const srv of this.serviceNames) {
+            // =>copy error html files
+            for (const name of Object.keys(this.configs.services[srv].web._abs_error_pages)) {
+                // =>copy 501.html file
+                fs.copyFileSync(this.configs.services[srv].web._abs_error_pages[name], path.join(nginxStaticsPath, path.basename(this.configs.services[srv].web._abs_error_pages[name])));
+            }
+
+        }
     }
     /**************************** */
     async runProjectConfigsJsFile(name: string, functionName: ServiceConfigsFunctionName = 'init') {
@@ -357,38 +390,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         for (const serviceName of Object.keys(this.configs.services)) {
             let srv = this.configs.services[serviceName];
             const serviceCustomPath = path.join(this.profile.path, 'services', serviceName);
-            // =>normalize docker
-            if (srv.docker) {
-                if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
-                if (!srv.docker.port) srv.docker.port = "80:80";
-                if (typeof srv.docker.port === 'number' || srv.docker.port.split(':').length == 1) {
-                    srv.docker.port = srv.docker.port + ":" + srv.docker.port;
-                }
-                srv.docker._expose_port = Number(srv.docker.port.split(':')[0]);
-                srv.docker._host_port = Number(srv.docker.port.split(':')[1]);
-                // =>normalize links
-                if (!srv.docker.links) srv.docker.links = [];
-                srv.docker.links = convertNameToContainerName(this.configs, srv.docker.links);
-                // =>normalize depends
-                if (!srv.docker.depends) srv.docker.depends = [];
-                srv.docker._depend_containers = convertNameToContainerName(this.configs, srv.docker.depends);
-                // =>normalize app health_check
-                if (srv.docker.health_check) {
-                    // srv.docker.health_check._test_str = `[ ${srv.docker.health_check.test.map(i => `"${i}"`).join(', ')} ]`;
-                    // if (!srv.docker.health_check.retries) srv.docker.health_check.retries = 30;
-                    // if (!srv.docker.health_check.timeout) srv.docker.health_check.timeout = 1;
-                }
-                // =>set health status
-                srv.docker._health_status = 'stopped';
-            }
-            // =>normalize web server
-            if (srv.web) {
-                if (srv.web.locations) {
-                    for (const loc of srv.web.locations) {
-                        if (!loc.modifier) loc.modifier = '';
-                    }
-                }
-            }
+
             // clone project in dist folder
             let clonePath = path.join(this.configs._env.dist_path, 'clones', serviceName);
             let skipCloneProjects = [];
@@ -483,6 +485,76 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (!db.volumes) {
                 db.volumes = [];
             }
+        }
+    }
+    /**************************** */
+    async normalizeServices() {
+        const customPath = path.join(this.profile.path, 'custom');
+        const envStaticPath = path.join(this.configs._env.env_path, 'static');
+        // =>iterate services
+        for (const serviceName of Object.keys(this.configs.services)) {
+            let srv = this.configs.services[serviceName];
+            const serviceCustomPath = path.join(this.profile.path, 'services', serviceName);
+            // =>normalize docker
+            if (srv.docker) {
+                if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
+                if (!srv.docker.port) srv.docker.port = "80:80";
+                if (typeof srv.docker.port === 'number' || srv.docker.port.split(':').length == 1) {
+                    srv.docker.port = srv.docker.port + ":" + srv.docker.port;
+                }
+                srv.docker._expose_port = Number(srv.docker.port.split(':')[0]);
+                srv.docker._host_port = Number(srv.docker.port.split(':')[1]);
+                // =>normalize links
+                if (!srv.docker.links) srv.docker.links = [];
+                srv.docker.links = convertNameToContainerName(this.configs, srv.docker.links);
+                // =>normalize depends
+                if (!srv.docker.depends) srv.docker.depends = [];
+                srv.docker._depend_containers = convertNameToContainerName(this.configs, srv.docker.depends);
+                // =>normalize app health_check
+                if (srv.docker.health_check) {
+                    // srv.docker.health_check._test_str = `[ ${srv.docker.health_check.test.map(i => `"${i}"`).join(', ')} ]`;
+                    // if (!srv.docker.health_check.retries) srv.docker.health_check.retries = 30;
+                    // if (!srv.docker.health_check.timeout) srv.docker.health_check.timeout = 1;
+                }
+                // =>set health status
+                srv.docker._health_status = 'stopped';
+            }
+            // =>normalize web server
+            if (!srv.web) {
+                srv.web = {};
+            }
+            if (srv.web) {
+                // =>check locations
+                if (srv.web.locations) {
+                    for (const loc of srv.web.locations) {
+                        if (!loc.modifier) loc.modifier = '';
+                    }
+                }
+                // =>check error pages
+                if (!srv.web.error_pages) {
+                    srv.web.error_pages = {};
+                }
+                srv.web._abs_error_pages = {};
+                for (const err of NginxErrorPageCodes) {
+                    // =>if custom
+                    if (srv.web.error_pages[err]) {
+                        srv.web._abs_error_pages[err] = path.join(customPath, srv.web.error_pages[err]);
+                    }
+                    // =>default of nginx
+                    else {
+                        srv.web._abs_error_pages[err] = path.join(envStaticPath, err + '.html');
+                        srv.web.error_pages[err] = err + '.html';
+                    }
+                }
+                // =>check maintenance
+                if (srv.web.maintenance && srv.web.maintenance.enabled) {
+                    if (srv.web.maintenance.filename) {
+                        srv.web._abs_error_pages['503'] = path.join(customPath, srv.web.maintenance.filename);
+                        srv.web.error_pages['503'] = srv.web.maintenance.filename;
+                    }
+                }
+            }
+
         }
     }
     /**************************** */

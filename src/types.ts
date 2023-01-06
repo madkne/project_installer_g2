@@ -7,6 +7,8 @@ export type ServiceConfigsFunctionName = 'compileFiles' | 'init' | 'beforeBuild'
 
 export type DockerContainerHealthType = 'starting' | 'healthy' | 'unhealthy' | 'stopped';
 
+export type NginxErrorPage = '404' | '500' | '501' | '502' | '503' | '504';
+
 export interface ProjectConfigs {
     _env: { [k in ConfigVariableKey]: any };
     project: {
@@ -63,9 +65,24 @@ export interface Service {
         _host_port?: number;
         _depend_containers?: string[];
         _health_status?: DockerContainerHealthType;
+        _ip?: string;
     };
     web: {
-        locations: AppLocation[];
+        locations?: AppLocation[];
+        maintenance?: {
+            enabled: boolean;
+            /**
+             * @default 503.html
+             */
+            filename?: string;
+            allowed_ips?: string[];
+        };
+        /**
+         * set custom error pages in `custom/` dir
+         */
+        error_pages?: { [k in NginxErrorPage]?: string };
+
+        _abs_error_pages?: { [k in NginxErrorPage]?: string };
     };
 
 }
