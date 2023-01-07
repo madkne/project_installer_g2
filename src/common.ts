@@ -33,6 +33,7 @@ export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<
     // =>set defaults
     if (!configs.project) configs.project = { name: 'sample' };
     if (!configs.project.docker_register) configs.project.docker_register = 'docker.io';
+    if (!configs.project.version) configs.project.version = 1;
     configs.project._env = env;
     if (configs.project.debug) {
         console.log('configs:', JSON.stringify(configs, null, 2))
@@ -235,6 +236,7 @@ export async function runDockerContainer(configs: ProjectConfigs, options: {
     capAdd?: string;
     argvs?: string[];
     network?: string;
+    pull?: 'never' | 'missing' | 'always';
     healthCheck?: HealthCheck;
 }) {
     let command = `sudo docker run --name ${options.name} -d --restart=unless-stopped`;
@@ -242,6 +244,9 @@ export async function runDockerContainer(configs: ProjectConfigs, options: {
         for (const port of options.ports) {
             command += ` -p "${port.host_ip ? port.host_ip + ':' : ''}${port.host}:${port.container}"`;
         }
+    }
+    if (options.pull) {
+        command += ` --pull=${options.pull}`;
     }
     if (options.capAdd) {
         command += ` --cap-add=${options.capAdd}`;

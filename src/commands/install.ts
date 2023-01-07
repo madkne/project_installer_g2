@@ -125,10 +125,14 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         // =>remove unused docker images
         if (!this.hasArgv('skip-remove-unused-images')) {
             await LOG.info('removing unused docker images...');
-            await OS.shell(`sudo docker rmi $(sudo docker images --filter "dangling=true" -q --no-trunc)
+            if (await OS.checkCommand('sudo docker images --filter "dangling=true" -q --no-trunc')) {
+                await OS.shell(`sudo docker rmi $(sudo docker images --filter "dangling=true" -q --no-trunc)
             `);
-            await OS.shell(`sudo docker rmi $(sudo docker images | grep "^<none" | awk '{print $3}')
-            `)
+            }
+            if (await OS.checkCommand(`sudo docker images | grep "^<none" | awk '{print $3}'`)) {
+                await OS.shell(`sudo docker rmi $(sudo docker images | grep "^<none" | awk '{print $3}')
+            `);
+            }
         }
         // =>normalize services
         await this.normalizeServices();
@@ -282,6 +286,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 envs: service.docker.envs,
                 links: service.docker.links,
                 hosts: service.docker.hosts,
+                pull: 'never',
             }) !== 0) {
                 return false;
             }

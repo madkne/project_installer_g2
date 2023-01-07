@@ -1,17 +1,28 @@
 # Configure project
 
+you must config your project in YML syntax.
+you can use variables on value of config properties.
+
+config files must be have such pattern: `configs.[env].yml`
+
+## `project`
+
 |property name| required | type | default | description |
 |:-------:|:-------:|:-------:|:-------:|:-------:|
-| docker_registery | NO | string | `docker.io` | can be every docker registry like `dockerhub.ir` and should used in dockerfiles of apps|
-| project_name | **YES** | string | - | used for docker compose and the other places|
-| sub_domains | **YES** | Array of [Sub domain](#sub-domain) | define applications on different sub domains. |
+| name | **YES** | string | - | name of project |
+| version | NO | number | 1 | version of project (used for docker image tags) |
+| extends | NO | string | - | name of another environment to inherit |
+| docker_register | NO | string | `docker.io` | can be every docker registry like `dockerhub.ir` and should used in dockerfiles of apps|
+| debug | NO | boolean | false | if true, show logs and commands on process |
+
+<!-- | sub_domains | **YES** | Array of [Sub domain](#sub-domain) | define applications on different sub domains. |
 | domain_name | **YES** | string | - | domain name like `sample.io`
 | ssl_enabled | NO | boolean | using ssl or not |
 | databases | NO |  Array of [Database](#database) | defined used apps databases| 
-| variables | NO | object | any other variables that applications maybe to needs |
+| variables | NO | object | any other variables that applications maybe to needs | -->
 <!-- | redirects | NO | Array of [Redirect](#redirect) | define different redirects| -->
 
-## Service
+## `services`
 
 |property| required | description|
 |-------| ------- | --------- |
@@ -20,7 +31,13 @@
 | healthcheck | NO | add health check on app| 
 | locations| NO | nginx location directive |
 
-### docker
+
+## `storages`
+
+
+## `variables`
+
+any other variables that applications maybe to needs 
 
 ### web
 #### `locations`
