@@ -74,7 +74,7 @@ async function _setConfigsVariables(configs: ProjectConfigs, vars: object) {
             for (const match of matches) {
                 // =>extract var name
                 let varName = match.replace('{{', '').replace('}}', '').trim();
-                if (vars[varName]) {
+                if (vars[varName] !== undefined) {
                     str = str.replace(match, vars[varName]);
                 }
             }
