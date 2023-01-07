@@ -35,8 +35,17 @@ export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<
     if (!configs.project.docker_register) configs.project.docker_register = 'docker.io';
     if (!configs.project.version) configs.project.version = 1;
     configs.project._env = env;
+    // =>normalize
+    for (const name of Object.keys(configs.services)) {
+        // =>fix type of maintenance enabled
+        if (configs.services[name]?.web?.maintenance?.enabled && typeof configs.services[name].web.maintenance.enabled === 'string') {
+            if (configs.services[name].web.maintenance.enabled === 'true' as any) configs.services[name].web.maintenance.enabled = true;
+            else configs.services[name].web.maintenance.enabled = false;
+        }
+    }
+
     if (configs.project.debug) {
-        console.log('configs:', JSON.stringify(configs, null, 2))
+        console.log('configs:', JSON.stringify(configs, null, 2));
     }
 
     return configs;

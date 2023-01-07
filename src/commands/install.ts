@@ -252,17 +252,23 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (service.docker.depends) {
                 this.configs = await setContainersHealthy(this.configs);
                 let healthCount = 0;
+                let unhealthyDepends = service.docker.depends;
                 for (const dep of service.docker.depends) {
                     // =>find depend in storages
                     if (Object.keys(this.configs.storages).includes(dep) && this.configs.storages[dep]._health_status === 'healthy') {
                         healthCount++;
+                        unhealthyDepends.splice(unhealthyDepends.indexOf(dep), 1);
                     }
                     // =>find depend in services
                     else if (Object.keys(this.configs.services).includes(dep) && this.configs.services[dep].docker._health_status === 'healthy') {
                         healthCount++;
+                        unhealthyDepends.splice(unhealthyDepends.indexOf(dep), 1);
                     }
                 }
                 if (healthCount < service.docker.depends.length) {
+                    if (this.configs.project.debug) {
+                        console.log(`service depends bad healths: ${healthCount} of ${service.docker.depends.length} (unhealthy depends: ${unhealthyDepends.join(', ')})`);
+                    }
                     // console.log(JSON.stringify(this.configs, null, 2))
                     // =>move service to last of processing
                     processingServices.splice(processingServices.indexOf(name), 1);
