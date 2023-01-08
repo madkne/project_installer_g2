@@ -307,7 +307,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
 
         }
         if (!await this.restartNginx()) {
-            return false;
+            LOG.warning('nginx restarting failed! Please check it.');
+            // return false;
         }
         if (this.configs.project.debug) {
             console.log(JSON.stringify(this.configs, null, 2));

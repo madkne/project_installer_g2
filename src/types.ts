@@ -117,6 +117,7 @@ export interface Storage {
     __has_envs?: boolean;
     health_check?: HealthCheck;
     _health_status?: DockerContainerHealthType;
+    _version?: string;
 }
 
 export interface Profile {

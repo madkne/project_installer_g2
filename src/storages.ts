@@ -8,7 +8,7 @@ export async function normalizeMysql(configs: ProjectConfigs, storageName: strin
     db.argvs = [
         '--character-set-server=utf8mb4',
         '--collation-server=utf8mb4_unicode_ci',
-        '--tls-version=invalid',
+        // '--tls-version=invalid',
         '--skip-ssl',
         '--default-authentication-plugin=mysql_native_password',
     ]
@@ -96,9 +96,18 @@ export async function normalizeMongo(configs: ProjectConfigs, storageName: strin
     if (!db.image) {
         db.image = 'mongo:latest';
     }
+    /// =>get version of mongo image
+    let res = await OS.exec(`sudo docker image inspect ${db.image}  | grep -Po 'MONGO_VERSION="*.*"' | cut -d "=" -f2-`);
+    if (res.stdout) {
+        db._version = res.stdout.replace('\"', '');
+    }
+    let mongoCommand = 'mongosh';
+    if (db._version.startsWith('4.')) {
+        mongoCommand = 'mongo';
+    }
     db.realPort = 27017;
     db.health_check = {
-        test: `mongosh --eval \\"db.adminCommand('ping').ok\\"`,
+        test: `${mongoCommand} --eval \\"db.adminCommand('ping').ok\\"`,
         timeout: '30s',
         retries: 300,
         interval: '1s',
