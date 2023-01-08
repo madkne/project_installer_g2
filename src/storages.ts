@@ -97,13 +97,16 @@ export async function normalizeMongo(configs: ProjectConfigs, storageName: strin
         db.image = 'mongo:latest';
     }
     /// =>get version of mongo image
-    let res = await OS.exec(`sudo docker image inspect ${db.image}  | grep -Po 'MONGO_VERSION="*.*"' | cut -d "=" -f2-`);
-    if (res.stdout) {
-        db._version = res.stdout.replace('\"', '');
-    }
     let mongoCommand = 'mongosh';
-    if (db._version.startsWith('4.')) {
-        mongoCommand = 'mongo';
+    let res = await OS.commandResult(`sudo docker image inspect -f '{{json .ContainerConfig.Env}}' ${db.image}`);
+    if (res) {
+        try {
+            let _envs = JSON.parse(res) as string[];
+            db._version = _envs[_envs.findIndex(i => i.indexOf('MONGO_VERSION') > -1)]?.split('=')[1];
+            if (db._version.startsWith('4.')) {
+                mongoCommand = 'mongo';
+            }
+        } catch (e) { }
     }
     db.realPort = 27017;
     db.health_check = {
