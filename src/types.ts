@@ -97,8 +97,8 @@ export interface AppLocation {
 
 export interface Storage {
     type: "mysql" | "mongo" | "redis";
-    port: number;
-    init_db_names: string[];
+    port?: number;
+    init_db_names?: string[];
     root_password?: string;
     allow_public?: boolean;
     /**

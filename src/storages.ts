@@ -133,16 +133,34 @@ export async function normalizeMongo(configs: ProjectConfigs, storageName: strin
                         db_${name} = db.getSiblingDB('${name}')`);
         }
     }
+    let createRootUser = '';
+    if (db.root_password) {
+        createRootUser = `
+        db.createUser(
+            {
+                user: "root",
+                roles: [
+                    {
+                        role: "root",
+                        db: "admin"
+                    },
+                ]
+            }
+        );
+        db.changeUserPassword('root',"${db.root_password}");
+        `
+    }
     // =>create init mongo script
     const mongoHookPath = path.join(configs._env.dist_path, 'hooks', 'mongo', storageName);
     fs.mkdirSync(mongoHookPath, { recursive: true });
     fs.writeFileSync(path.join(mongoHookPath, 'init.sh'), `
 set -e
 ${initMongoFile}
-mongo <<EOF
+${mongoCommand} <<EOF
 
 ${createDBCommands.join('\n\n')}
 
+${createRootUser}
 EOF
                     `);
     db.volumes.push(`./hooks/mongo/${storageName}/init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro`);
