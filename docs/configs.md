@@ -14,7 +14,7 @@ config files must be have such pattern: `configs.[env].yml`
 | extends | NO | string | - | name of another environment to inherit |
 | docker_register | NO | string | `docker.io` | can be every docker registry like `dockerhub.ir` and should used in dockerfiles of apps|
 | debug | NO | boolean | false | if true, show logs and commands on process |
-
+| ip_mapping | NO | string | 'dhcp' | type of ip mappings on docker containers |
 
 ## `services`
 

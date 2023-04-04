@@ -20,6 +20,10 @@ export interface ProjectConfigs {
          */
         docker_register?: string;
         debug?: boolean;
+        /**
+         * @default 'dhcp'
+         */
+        ip_mapping?: 'dhcp' | 'static';
 
         _env?: string;
     };
@@ -45,6 +49,7 @@ export interface Service {
         branch?: string;
     };
     docker: {
+        ip?: string;
         /**
          * @default true
          */

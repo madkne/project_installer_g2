@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, runDockerContainer, setContainersHealthy, stopContainers } from '../common';
+import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, runDockerContainer, setContainersHealthy, stopContainers } from '../common';
 import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -293,6 +293,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 links: service.docker.links,
                 hosts: service.docker.hosts,
                 pull: 'never',
+                ip: service.docker.ip,
             }) !== 0) {
                 return false;
             }
@@ -483,6 +484,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             const serviceCustomPath = path.join(this.profile.path, 'services', serviceName);
             // =>normalize docker
             if (srv.docker) {
+                // =>set static ip
+                if (this.configs.project.ip_mapping === 'static') {
+                    srv.docker.ip = await generateContainerStaticIP(this.configs);
+                }
                 if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
                 if (!srv.docker.port) srv.docker.port = "80:80";
                 if (typeof srv.docker.port === 'number' || srv.docker.port.split(':').length == 1) {

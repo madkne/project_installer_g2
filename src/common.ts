@@ -34,6 +34,7 @@ export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<
     if (!configs.project) configs.project = { name: 'sample' };
     if (!configs.project.docker_register) configs.project.docker_register = 'docker.io';
     if (!configs.project.version) configs.project.version = 1;
+    if (!configs.project.ip_mapping) configs.project.ip_mapping = 'dhcp';
     configs.project._env = env;
     // =>normalize
     for (const name of Object.keys(configs.services)) {
@@ -244,6 +245,7 @@ export async function runDockerContainer(configs: ProjectConfigs, options: {
     hostname?: string;
     capAdd?: string;
     argvs?: string[];
+    ip?: string;
     network?: string;
     pull?: 'never' | 'missing' | 'always';
     healthCheck?: HealthCheck;
@@ -268,6 +270,9 @@ export async function runDockerContainer(configs: ProjectConfigs, options: {
     }
     if (options.network) {
         command += ` --network "${options.network}"`;
+    }
+    if (options.ip) {
+        command += ` --ip "${options.ip}"`;
     }
     if (options.volumes) {
         for (let vol of options.volumes) {
@@ -414,4 +419,21 @@ export async function getContainerIP(containerName: string) {
     } catch (e) {
         return undefined;
     }
+}
+
+export async function generateContainerStaticIP(configs: ProjectConfigs) {
+    let ipNumber = 1;
+    const SubNetMaskStartOf = '172.18.0';
+    for (const key in configs.services) {
+        const element = configs.services[key];
+        if (element.docker?.ip.startsWith(SubNetMaskStartOf)) {
+            let lastNumber = element.docker?.ip.split('.').pop();
+            if (Number(lastNumber) > ipNumber) {
+                ipNumber = Number(lastNumber) + 1;
+            } else if (Number(lastNumber) == ipNumber) {
+                ipNumber++;
+            }
+        }
+    }
+    return SubNetMaskStartOf + '.' + ipNumber;
 }
