@@ -10,6 +10,7 @@ import * as yml from 'js-yaml';
 
 export const NginxErrorPageCodes: NginxErrorPage[] = ['404', '500', '501', '502', '503', '504'];
 
+export const ServicesNetworkSubnetStartOf = '172.18.0';
 
 export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<ProjectConfigs> {
     // =>read configs.json file
@@ -421,12 +422,11 @@ export async function getContainerIP(containerName: string) {
     }
 }
 
-export async function generateContainerStaticIP(configs: ProjectConfigs) {
+export async function generateServiceContainerStaticIP(configs: ProjectConfigs) {
     let ipNumber = 1;
-    const SubNetMaskStartOf = '172.18.0';
     for (const key in configs.services) {
         const element = configs.services[key];
-        if (!element?.docker?.ip || !element.docker?.ip.startsWith(SubNetMaskStartOf)) continue;
+        if (!element?.docker?.ip || !element.docker?.ip?.startsWith(ServicesNetworkSubnetStartOf)) continue;
         let lastNumber = element.docker?.ip.split('.').pop();
         if (Number(lastNumber) > ipNumber) {
             ipNumber = Number(lastNumber) + 1;
@@ -434,5 +434,5 @@ export async function generateContainerStaticIP(configs: ProjectConfigs) {
             ipNumber++;
         }
     }
-    return SubNetMaskStartOf + '.' + ipNumber;
+    return ServicesNetworkSubnetStartOf + '.' + ipNumber;
 }

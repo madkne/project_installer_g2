@@ -71,6 +71,7 @@ export interface Service {
         _depend_containers?: string[];
         _health_status?: DockerContainerHealthType;
         _ip?: string;
+        _network?: string;
     };
     web: {
         locations?: AppLocation[];

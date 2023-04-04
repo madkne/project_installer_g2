@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, runDockerContainer, setContainersHealthy, stopContainers } from '../common';
+import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, runDockerContainer, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
 import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -133,6 +133,12 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 await OS.shell(`sudo docker rmi $(sudo docker images | grep "^<none" | awk '{print $3}')
             `);
             }
+        }
+        // =>create static networks
+        if (this.configs.project.ip_mapping === 'static') {
+            await OS.exec(`sudo docker network rm project_services`);
+            // =>create services static network
+            await OS.shell(`sudo docker network create project_services --subnet="${ServicesNetworkSubnetStartOf}.0/24"`);
         }
         // =>normalize services
         await this.normalizeServices();
@@ -294,6 +300,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 hosts: service.docker.hosts,
                 pull: 'never',
                 ip: service.docker.ip,
+                network: service.docker._network,
             }) !== 0) {
                 return false;
             }
@@ -486,7 +493,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (srv.docker) {
                 // =>set static ip
                 if (this.configs.project.ip_mapping === 'static') {
-                    srv.docker.ip = await generateContainerStaticIP(this.configs);
+                    srv.docker.ip = await generateServiceContainerStaticIP(this.configs);
+                    srv.docker._network = 'project_services';
                 }
                 if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
                 if (!srv.docker.port) srv.docker.port = "80:80";
