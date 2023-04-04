@@ -423,7 +423,7 @@ export async function getContainerIP(containerName: string) {
 }
 
 export async function generateServiceContainerStaticIP(configs: ProjectConfigs) {
-    let ipNumber = 1;
+    let ipNumber = 2; //start from x.x.x.2 ips
     for (const key in configs.services) {
         const element = configs.services[key];
         if (!element?.docker?.ip || !element.docker?.ip?.startsWith(ServicesNetworkSubnetStartOf)) continue;

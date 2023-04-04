@@ -240,6 +240,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 envs: storage.envs,
                 capAdd: storage['capAdd'],
                 argvs: storage.argvs,
+                ip: storage._ip,
+                network: storage._network,
             }) !== 0) {
                 return false;
             }
@@ -457,6 +459,11 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     async normalizeStorages() {
         for (const storageName of Object.keys(this.configs.storages)) {
             let db = this.configs.storages[storageName];
+            // =>set static ip
+            if (this.configs.project.ip_mapping === 'static') {
+                db._ip = await generateServiceContainerStaticIP(this.configs);
+                db._network = 'project_services';
+            }
             if (!db.timezone) {
                 db.timezone = 'UTC';
             }

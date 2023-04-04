@@ -124,6 +124,8 @@ export interface Storage {
     health_check?: HealthCheck;
     _health_status?: DockerContainerHealthType;
     _version?: string;
+    _network?: string;
+    _ip?: string;
 }
 
 export interface Profile {
