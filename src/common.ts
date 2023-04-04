@@ -426,13 +426,12 @@ export async function generateContainerStaticIP(configs: ProjectConfigs) {
     const SubNetMaskStartOf = '172.18.0';
     for (const key in configs.services) {
         const element = configs.services[key];
-        if (element.docker?.ip.startsWith(SubNetMaskStartOf)) {
-            let lastNumber = element.docker?.ip.split('.').pop();
-            if (Number(lastNumber) > ipNumber) {
-                ipNumber = Number(lastNumber) + 1;
-            } else if (Number(lastNumber) == ipNumber) {
-                ipNumber++;
-            }
+        if (!element?.docker?.ip || !element.docker?.ip.startsWith(SubNetMaskStartOf)) continue;
+        let lastNumber = element.docker?.ip.split('.').pop();
+        if (Number(lastNumber) > ipNumber) {
+            ipNumber = Number(lastNumber) + 1;
+        } else if (Number(lastNumber) == ipNumber) {
+            ipNumber++;
         }
     }
     return SubNetMaskStartOf + '.' + ipNumber;
