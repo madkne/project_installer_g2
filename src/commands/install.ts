@@ -554,7 +554,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                         srv.web.error_pages[err] = err + '.html';
                     }
                     // =>check crete location directive for current error page (not duplicate)
-                    if (Object.keys(srv.web.error_pages).find(i => i !== err && srv.web.error_pages[i] === srv.web.error_pages[err])) {
+                    if (Object.keys(srv.web.error_pages).find(i => i !== err && srv.web.error_pages[i] === srv.web.error_pages[err] && srv.web._use_error_pages_location[err])) {
                         srv.web._use_error_pages_location[err] = false;
                     }
                 }
