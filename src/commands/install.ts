@@ -541,7 +541,9 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     srv.web.error_pages = {};
                 }
                 srv.web._abs_error_pages = {};
+                srv.web._use_error_pages_location = {};
                 for (const err of NginxErrorPageCodes) {
+                    srv.web._use_error_pages_location[err] = true;
                     // =>if custom
                     if (srv.web.error_pages[err]) {
                         srv.web._abs_error_pages[err] = path.join(customPath, srv.web.error_pages[err]);
@@ -550,6 +552,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                     else {
                         srv.web._abs_error_pages[err] = path.join(envStaticPath, err + '.html');
                         srv.web.error_pages[err] = err + '.html';
+                    }
+                    // =>check crete location directive for current error page (not duplicate)
+                    if (Object.keys(srv.web.error_pages).find(i => i !== err && srv.web.error_pages[i] === srv.web.error_pages[err])) {
+                        srv.web._use_error_pages_location[err] = false;
                     }
                 }
                 // =>check maintenance

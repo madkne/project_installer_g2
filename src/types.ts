@@ -75,6 +75,11 @@ export interface Service {
     };
     web: {
         locations?: AppLocation[];
+        /**
+         * limits the maximum number of simultaneous active connections to the proxied server (1.11.5). Default value is zero, meaning there is no limit.
+         * @default 0
+         */
+        // max_connections?: number;
         maintenance?: {
             enabled: boolean;
             /**
@@ -89,6 +94,8 @@ export interface Service {
         error_pages?: { [k in NginxErrorPage]?: string };
 
         _abs_error_pages?: { [k in NginxErrorPage]?: string };
+
+        _use_error_pages_location?: { [k in NginxErrorPage]?: boolean };
     };
 
 }

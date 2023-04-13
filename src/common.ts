@@ -424,10 +424,22 @@ export async function getContainerIP(containerName: string) {
 
 export async function generateServiceContainerStaticIP(configs: ProjectConfigs) {
     let ipNumber = 2; //start from x.x.x.2 ips
+    // =>check services
     for (const key in configs.services) {
         const element = configs.services[key];
         if (!element?.docker?.ip || !element.docker?.ip?.startsWith(ServicesNetworkSubnetStartOf)) continue;
         let lastNumber = element.docker?.ip.split('.').pop();
+        if (Number(lastNumber) > ipNumber) {
+            ipNumber = Number(lastNumber) + 1;
+        } else if (Number(lastNumber) == ipNumber) {
+            ipNumber++;
+        }
+    }
+    // =>check storages
+    for (const key in configs.storages) {
+        const element = configs.storages[key];
+        if (!element?._ip || !element._ip?.startsWith(ServicesNetworkSubnetStartOf)) continue;
+        let lastNumber = element._ip.split('.').pop();
         if (Number(lastNumber) > ipNumber) {
             ipNumber = Number(lastNumber) + 1;
         } else if (Number(lastNumber) == ipNumber) {
