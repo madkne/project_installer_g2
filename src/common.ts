@@ -468,7 +468,7 @@ export function parseHumanTimeToCronFormat(humanTime: string) {
     }
     // =>parse hour
     else if (unit === 'h') {
-        crontabTime = `0 */${}`
+        // crontabTime = `0 */${}`
     }
     // =>parse minute
     else if (unit === 'm') {

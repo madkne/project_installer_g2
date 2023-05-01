@@ -10,10 +10,10 @@ LOCAL_BACKUP_DIR="/backup/"
 DB_NAME="test"
 DB_USER="root"
 DB_PASSWORD="your password"
-FTP_SERVER="ftp.tecadmin.net"
-FTP_USERNAME="ftp user name"
-FTP_PASSWORD="ftp user password"
-FTP_UPLOAD_DIR="/backup/"
+FTP_SERVER="{{settings.host}}"
+FTP_USERNAME="{{settings.username}}"
+FTP_PASSWORD="{{settings.password}}"
+FTP_UPLOAD_DIR="{{plan.remote_path}}"
 LOG_FILE=/backup/backup-DATE.log
 
 ############### Local Backup  ########################

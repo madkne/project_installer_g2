@@ -338,7 +338,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         // =>update backups
         if (this.configs.backup) {
             LOG.info('Updating Backup Plans...');
-            this.updateBackupPlans();
+            await this.updateBackupPlans();
         }
 
         this.updatingServer = false;
@@ -640,19 +640,24 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         if (!this.configs.backup.plans) this.configs.backup.plans = {};
         // =>reset crontab
         await OS.shell(`crontab -l > mycron;echo "" > mycron;crontab mycron;rm mycron`);
+        // =>remove backup scripts
+        await OS.rmdir(this.configs._env.backups_path);
+        fs.mkdirSync(this.configs._env.backups_path, { recursive: true });
+        // =>iterate plans
         for (const key in this.configs.backup.plans) {
             const plan = this.configs.backup.plans[key];
             let planScriptPath = '';
+            if (!plan.remote_path) plan.remote_path = '/';
             // =>if storage plan
             if (plan.storage_name) {
                 // =>if mysql storage
                 if (this.configs.storages[plan.storage_name].type === 'mysql') {
                     // =>render mysql script
-                    let renderedScript = await TEM.renderString(path.join(this.configs._env.env_path, 'backups', 'mysql.sh'), { data: this.configs });
+                    let renderedScript = await TEM.renderFile(path.join(this.configs._env.env_path, 'backups', 'mysql.sh'), { data: { plan, settings: this.configs.backup.settings, mysql: this.configs.storages[plan.storage_name] }, noCache: true });
                     // =>write script file
                     planScriptPath = path.join(this.configs._env.backups_path, key + '_' + Math.ceil(Math.random() * 1000) + '.sh');
                     fs.writeFileSync(planScriptPath, renderedScript.data);
-                    plan
+
                 }
             }
             if (!plan.crontab_time) plan.crontab_time = "0 */12 * * *";
