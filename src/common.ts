@@ -23,8 +23,10 @@ export async function loadAllConfig(profilePath: string, env = 'prod'): Promise<
     configs._env.ssl_path = path.join(profilePath, 'ssl');
     configs._env.env_hooks_path = path.join(configs._env.env_path, 'hooks');
     configs._env.dist_hooks_path = path.join(configs._env.dist_path, 'hooks');
+    configs._env.backups_path = path.join(configs._env.dist_path, 'backups');
     // =>create dirs
     fs.mkdirSync(configs._env.ssl_path, { recursive: true });
+    fs.mkdirSync(configs._env.backups_path, { recursive: true });
     configs._env.dockerfiles_path = path.join(configs._env.dist_path, 'dockerfiles');
     fs.mkdirSync(configs._env.dockerfiles_path, { recursive: true });
     fs.mkdirSync(path.join(configs._env.dist_path, 'data', 'nginx'), { recursive: true });
@@ -447,4 +449,31 @@ export async function generateServiceContainerStaticIP(configs: ProjectConfigs) 
         }
     }
     return ServicesNetworkSubnetStartOf + '.' + ipNumber;
+}
+
+
+export function parseHumanTimeToCronFormat(humanTime: string) {
+    let unit: 'd' | 'h' | 'm' = 'd';
+    let crontabTime = '';
+    if (humanTime && humanTime.length > 1) {
+        unit = humanTime[humanTime.length - 1] as any;
+    }
+    // =>parse number
+    let day = 0;
+    let hour = 0;
+    let minute = 0;
+    // =>parse day
+    if (unit === 'd') {
+        //TODO:
+    }
+    // =>parse hour
+    else if (unit === 'h') {
+        crontabTime = `0 */${}`
+    }
+    // =>parse minute
+    else if (unit === 'm') {
+
+    }
+
+    return crontabTime;
 }

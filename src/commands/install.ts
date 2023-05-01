@@ -1,8 +1,9 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, runDockerContainer, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
+import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, parseHumanTimeToCronFormat, runDockerContainer, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
 import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as cron from 'node-cron';
 import * as LOG from '@dat/lib/log';
 import * as IN from '@dat/lib/input';
 import * as ENV from '@dat/lib/env';
@@ -334,6 +335,12 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             await this.runProjectConfigsJsFile(name, 'finish');
 
         }
+        // =>update backups
+        if (this.configs.backup) {
+            LOG.info('Updating Backup Plans...');
+            this.updateBackupPlans();
+        }
+
         this.updatingServer = false;
         LOG.success(`You must set '${this.configs.domain.name}' and the other sub domains on '/etc/hosts' file.\nYou can see project on http${this.configs.domain.ssl_enabled ? 's' : ''}://${this.configs.domain.name}`);
 
@@ -628,5 +635,34 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             } catch (e) { }
         }
     }
-
+    /**************************** */
+    async updateBackupPlans() {
+        if (!this.configs.backup.plans) this.configs.backup.plans = {};
+        // =>reset crontab
+        await OS.shell(`crontab -l > mycron;echo "" > mycron;crontab mycron;rm mycron`);
+        for (const key in this.configs.backup.plans) {
+            const plan = this.configs.backup.plans[key];
+            let planScriptPath = '';
+            // =>if storage plan
+            if (plan.storage_name) {
+                // =>if mysql storage
+                if (this.configs.storages[plan.storage_name].type === 'mysql') {
+                    // =>render mysql script
+                    let renderedScript = await TEM.renderString(path.join(this.configs._env.env_path, 'backups', 'mysql.sh'), { data: this.configs });
+                    // =>write script file
+                    planScriptPath = path.join(this.configs._env.backups_path, key + '_' + Math.ceil(Math.random() * 1000) + '.sh');
+                    fs.writeFileSync(planScriptPath, renderedScript.data);
+                    plan
+                }
+            }
+            if (!plan.crontab_time) plan.crontab_time = "0 */12 * * *";
+            // if (plan.human_time) {
+            //     plan.crontab_time = parseHumanTimeToCronFormat(plan.human_time);
+            // }TODO:
+            const crontabLine = `${plan.crontab_time} /bin/bash ${planScriptPath}`;
+            // cron.schedule(`${plan.crontab_time} /bin/bash ${planScriptPath}`,)
+            await OS.shell(`crontab -l > mycron;echo "${crontabLine}" >> mycron;crontab mycron;rm mycron
+            `);
+        }
+    }
 } 

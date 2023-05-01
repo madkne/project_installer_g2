@@ -1,7 +1,7 @@
 export type CommandName = 'install' | 'stop' | 'log' | 'add' | 'import';
 export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log' | 'name' | 'path' | 'profile' | 'storages' | 'all-services' | 'all-storages';
 
-export type ConfigVariableKey = 'git_username' | 'git_password' | 'env_path' | 'dist_path' | 'dockerfiles_path' | 'ssl_path' | 'env_hooks_path' | 'dist_hooks_path';
+export type ConfigVariableKey = 'git_username' | 'git_password' | 'env_path' | 'dist_path' | 'dockerfiles_path' | 'ssl_path' | 'env_hooks_path' | 'dist_hooks_path' | 'backups_path';
 
 export type ServiceConfigsFunctionName = 'compileFiles' | 'init' | 'beforeBuild' | 'finish';
 
@@ -33,10 +33,62 @@ export interface ProjectConfigs {
     };
     services: { [k: string]: Service };
     storages?: { [k: string]: Storage };
+    backup?: ProjectBackupInfo;
     variables?: { [k: string]: any };
 }
 
 export type ConfigMode = 'dev' | 'prod';
+
+export interface ProjectBackupInfo {
+    plans: { [k: string]: ProjectBackupPlan };
+    settings: {
+        /**
+         * @default ftp
+         */
+        type?: 'ftp';
+        /**
+         * @required for ftp type
+         * @example ftp.server.com
+         */
+        host?: string;
+        /**
+         * @required for ftp type
+         */
+        username?: string;
+        /**
+         * @required for ftp type
+         */
+        password?: string;
+    };
+}
+
+export interface ProjectBackupPlan {
+    service_name?: string;
+    storage_name?: string;
+    /**
+     * @required for service
+     * @default /
+     */
+    service_local_path?: string;
+    /**
+     * @default /
+     */
+    remote_path?: string;
+    /**
+     * @default "0 *\/12 * * *"
+     */
+    crontab_time?: string;
+    /**
+     * auto convert to crontab time
+     * @example 1m | 7h | 2.5d
+     */
+    human_time?: string;
+    /**
+     * how many backups keep and not remove or replace it
+     * @default 1
+     */
+    keep_backups?: number;
+}
 
 export interface Service {
     sub_domain: string;
