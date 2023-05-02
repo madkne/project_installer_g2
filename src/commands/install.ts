@@ -653,7 +653,15 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
                 // =>if mysql storage
                 if (this.configs.storages[plan.storage_name].type === 'mysql') {
                     // =>render mysql script
-                    let renderedScript = await TEM.renderFile(path.join(this.configs._env.env_path, 'backups', 'mysql.sh'), { data: { plan, settings: this.configs.backup.settings, mysql: this.configs.storages[plan.storage_name] }, noCache: true });
+                    let renderedScript = await TEM.renderFile(path.join(this.configs._env.env_path, 'backups', 'mysql.sh'), {
+                        data: {
+                            plan,
+                            settings: this.configs.backup.settings,
+                            mysql: this.configs.storages[plan.storage_name],
+                            mysql_image_name: makeDockerStorageName(plan.storage_name, this.configs),
+                            local_backups_dir: path.join(this.configs._env.backups_path, 'backup_files'),
+                        }, noCache: true
+                    });
                     // =>write script file
                     planScriptPath = path.join(this.configs._env.backups_path, key + '_' + Math.ceil(Math.random() * 1000) + '.sh');
                     fs.writeFileSync(planScriptPath, renderedScript.data);

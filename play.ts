@@ -15,7 +15,7 @@ import { AddCommand } from "./src/commands/add";
 import { ImportCommand } from "./src/commands/import";
 
 /************************************* */
-const VERSION = '0.93';
+const VERSION = '0.94';
 
 /************************************* */
 export async function main(): Promise<number> {

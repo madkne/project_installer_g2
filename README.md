@@ -29,10 +29,15 @@ clone, build, and run your dockerized project with nginx on multiple sub domains
 
 ## How to use
 
-- `dat p add --name=test_project`
-- edit `profiles/test_project/configs.prod.yml` file (to define your apps and used databases)
-- `dat p i` install/update project
-- `dat p stp` stop docker containers
+1. `dat p add --name=test_project`
+    - you can set default env in `.dat/.env` file with `defaultEnv` property.
+    - default env is `prod`
+
+2. edit `profiles/test_project/configs.prod.yml` file (to define your apps and used databases)
+
+3. `dat p i` install/update project
+
+4. `dat p stp` stop docker containers
 
 
 

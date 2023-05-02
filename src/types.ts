@@ -88,6 +88,10 @@ export interface ProjectBackupPlan {
      * @default 1
      */
     keep_backups?: number;
+    /**
+     * @required for storages like mysql
+     */
+    db_name?: string;
 }
 
 export interface Service {
