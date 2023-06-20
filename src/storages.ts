@@ -98,7 +98,10 @@ export async function normalizeMongo(configs: ProjectConfigs, storageName: strin
     }
     /// =>get version of mongo image
     let mongoCommand = 'mongosh';
-    let res = await OS.commandResult(`sudo docker image inspect -f '{{json .ContainerConfig.Env}}' ${db.image}`);
+    let res: string;
+    try {
+        res = await OS.commandResult(`sudo docker image inspect -f '{{json .ContainerConfig.Env}}' ${db.image}`);
+    } catch (e) { }
     if (res) {
         try {
             let _envs = JSON.parse(res) as string[];

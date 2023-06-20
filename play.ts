@@ -13,9 +13,10 @@ import { StopCommand } from "./src/commands/stop";
 import { LogCommand } from "./src/commands/log";
 import { AddCommand } from "./src/commands/add";
 import { ImportCommand } from "./src/commands/import";
+import { PushCommand } from "./src/commands/push";
 
 /************************************* */
-const VERSION = '0.94';
+const VERSION = '0.96';
 
 /************************************* */
 export async function main(): Promise<number> {
@@ -30,6 +31,7 @@ export async function main(): Promise<number> {
    StopCommand
    LogCommand
    ImportCommand
+   PushCommand
 
    return 0;
 }

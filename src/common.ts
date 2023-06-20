@@ -1,4 +1,4 @@
-import { ConfigMode, ConfigVariableKey, DockerContainerHealthType, HealthCheck, NginxErrorPage, Profile, ProjectConfigs, Service } from "./types";
+import { ConfigMode, ConfigVariableKey, DockerContainerHealthType, HealthCheck, NginxErrorPage, Profile, ProjectConfigs, Service, ServiceConfigsFunctionName } from "./types";
 import * as ENV from '@dat/lib/env';
 import * as LOG from '@dat/lib/log';
 import * as fs from 'fs';
@@ -6,8 +6,10 @@ import * as path from 'path';
 import * as OS from '@dat/lib/os';
 import * as TEM from '@dat/lib/template';
 import * as yml from 'js-yaml';
+import * as GIT from '@dat/lib/git';
 
 
+export const serviceConfigsFileName = 'service.configs.js';
 export const NginxErrorPageCodes: NginxErrorPage[] = ['404', '500', '501', '502', '503', '504'];
 
 export const ServicesNetworkSubnetStartOf = '172.18.0';
@@ -197,7 +199,7 @@ export async function generateSSL(configs: ProjectConfigs) {
 }
 
 async function _generateSelfSignedSSl(sslPath: string, domainName: string, commonName: string) {
-    // let res12 = await OS.shell(`sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout ${path.join(this.configs.ssl_path, 'cert.key')} -out ${path.join(this.configs.ssl_path, 'cert.crt')}`, this.configs.ssl_path);
+    // let res12 = await OS.shell(`sudo openssl req -x509 -nodes -days 3650 -newkey rsa:2048 -keyout ${path.join(configs.ssl_path, 'cert.key')} -out ${path.join(configs.ssl_path, 'cert.crt')}`, configs.ssl_path);
     let commands = `
 SUBJ="
 C=US
@@ -476,4 +478,169 @@ export function parseHumanTimeToCronFormat(humanTime: string) {
     }
 
     return crontabTime;
+}
+
+export async function normalizeServicesByConfigs(serviceNames: string[], profile: Profile, configs: ProjectConfigs) {
+    const customPath = path.join(profile.path, 'custom');
+    const envStaticPath = path.join(configs._env.env_path, 'static');
+    // =>iterate services
+    for (const serviceName of serviceNames) {
+        let srv = configs.services[serviceName];
+        const serviceCustomPath = path.join(profile.path, 'services', serviceName);
+        // =>normalize docker
+        if (srv.docker) {
+            // =>set static ip
+            if (configs.project.ip_mapping === 'static') {
+                srv.docker.ip = await generateServiceContainerStaticIP(configs);
+                srv.docker._network = 'project_services';
+            }
+            if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
+            if (!srv.docker.port) srv.docker.port = "80:80";
+            if (typeof srv.docker.port === 'number' || srv.docker.port.split(':').length == 1) {
+                srv.docker.port = srv.docker.port + ":" + srv.docker.port;
+            }
+            srv.docker._expose_port = Number(srv.docker.port.split(':')[0]);
+            srv.docker._host_port = Number(srv.docker.port.split(':')[1]);
+            // =>normalize links
+            if (!srv.docker.links) srv.docker.links = [];
+            srv.docker.links = convertNameToContainerName(configs, srv.docker.links);
+            // =>normalize depends
+            if (!srv.docker.depends) srv.docker.depends = [];
+            srv.docker._depend_containers = convertNameToContainerName(configs, srv.docker.depends);
+            // =>normalize app health_check
+            if (srv.docker.health_check) {
+                // srv.docker.health_check._test_str = `[ ${srv.docker.health_check.test.map(i => `"${i}"`).join(', ')} ]`;
+                // if (!srv.docker.health_check.retries) srv.docker.health_check.retries = 30;
+                // if (!srv.docker.health_check.timeout) srv.docker.health_check.timeout = 1;
+            }
+            // =>set health status
+            srv.docker._health_status = 'stopped';
+        }
+        // =>normalize web server
+        if (!srv.web) {
+            srv.web = {};
+        }
+        if (srv.web) {
+            // =>check locations
+            if (srv.web.locations) {
+                for (const loc of srv.web.locations) {
+                    if (!loc.modifier) loc.modifier = '';
+                }
+            }
+            // =>check error pages
+            if (!srv.web.error_pages) {
+                srv.web.error_pages = {};
+            }
+            srv.web._abs_error_pages = {};
+            srv.web._use_error_pages_location = {};
+            for (const err of NginxErrorPageCodes) {
+                srv.web._use_error_pages_location[err] = true;
+                // =>if custom
+                if (srv.web.error_pages[err]) {
+                    srv.web._abs_error_pages[err] = path.join(customPath, srv.web.error_pages[err]);
+                }
+                // =>default of nginx
+                else {
+                    srv.web._abs_error_pages[err] = path.join(envStaticPath, err + '.html');
+                    srv.web.error_pages[err] = err + '.html';
+                }
+                // =>check crete location directive for current error page (not duplicate)
+                if (Object.keys(srv.web.error_pages).find(i => i !== err && srv.web.error_pages[i] === srv.web.error_pages[err] && srv.web._use_error_pages_location[err])) {
+                    srv.web._use_error_pages_location[err] = false;
+                }
+            }
+            // =>check maintenance
+            if (srv.web.maintenance && srv.web.maintenance.enabled) {
+                if (srv.web.maintenance.filename) {
+                    srv.web._abs_error_pages['503'] = path.join(customPath, srv.web.maintenance.filename);
+                    srv.web.error_pages['503'] = srv.web.maintenance.filename;
+                }
+            }
+        }
+
+    }
+}
+
+export async function cloneProjectServicesByConfigs(serviceNames: string[], profile: Profile, configs: ProjectConfigs) {
+    let projectConfigsJsFiles: {} = {};
+    for (const serviceName of serviceNames) {
+        let srv = configs.services[serviceName];
+        const serviceCustomPath = path.join(profile.path, 'services', serviceName);
+
+        // clone project in dist folder
+        let clonePath = path.join(configs._env.dist_path, 'clones', serviceName);
+
+        // =>check if allowed to clone project
+        if (srv.clone) {
+            if (!srv.clone.branch) srv.clone.branch = 'master';
+            await OS.rmdir(clonePath);
+            fs.mkdirSync(clonePath, { recursive: true });
+            LOG.info(`cloning ${serviceName}@${srv.clone.branch} project...`);
+            let res = await GIT.clone({
+                cloneUrl: srv.clone.url,
+                branch: srv.clone.branch,
+                depth: 1,
+                username: configs._env.git_username,
+                password: configs._env.git_password,
+                directory: srv.clone.branch,
+            }, clonePath);
+            LOG.log(res.stderr);
+            if (res.code !== 0) return {};
+            // =>move from clone branch dir to root dir
+            await OS.copyDirectory(path.join(clonePath, srv.clone.branch), clonePath);
+            await OS.rmdir(path.join(clonePath, srv.clone.branch));
+        } else {
+            fs.mkdirSync(clonePath, { recursive: true });
+        }
+        // =>if exist service folder
+        if (fs.existsSync(serviceCustomPath)) {
+            let dirList = fs.readdirSync(serviceCustomPath, { withFileTypes: true });
+            for (const f of dirList) {
+                if (f.isFile()) {
+                    fs.copyFileSync(path.join(serviceCustomPath, f.name), path.join(clonePath, f.name));
+                }
+            }
+        }
+        // =>load 'service.configs.js' if exist
+        if (fs.existsSync(path.join(clonePath, serviceConfigsFileName))) {
+            projectConfigsJsFiles[serviceName] = await import(path.join(clonePath, serviceConfigsFileName));
+        }
+
+        // =>get compiled files
+        let compiledFiles = await _runProjectConfigsJsFile(serviceName, 'compileFiles', projectConfigsJsFiles, configs);
+        if (compiledFiles !== undefined && Array.isArray(compiledFiles)) {
+            for (const file of compiledFiles) {
+                // =>render app entrypoint
+                if (fs.existsSync(path.join(clonePath, file))) {
+                    let data = clone(configs);
+                    data['envs'] = srv.docker.envs;
+                    // =>render file of project
+                    let renderFile = await TEM.renderFile(path.join(clonePath, file), { data, noCache: true });
+                    fs.writeFileSync(path.join(clonePath, file), renderFile.data);
+                }
+            }
+        }
+        // =>run init command
+        await _runProjectConfigsJsFile(serviceName, 'init', projectConfigsJsFiles, configs);
+
+        // =>render docker file of project, if exist
+        if (fs.existsSync(path.join(clonePath, 'Dockerfile'))) {
+            let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: configs, noCache: true });
+            fs.writeFileSync(path.join(configs._env.dockerfiles_path, `${serviceName}_Dockerfile`), renderDockerfile.data);
+        }
+    }
+
+    return { projectConfigsJsFiles };
+}
+
+export async function _runProjectConfigsJsFile(name: string, functionName: ServiceConfigsFunctionName, projectConfigsJsFiles: {}, configs: ProjectConfigs, getArgv: {} = {}) {
+    if (projectConfigsJsFiles[name] && projectConfigsJsFiles[name][functionName]) {
+        let res2 = await projectConfigsJsFiles[name][functionName](configs, {
+            git: GIT,
+            logs: LOG,
+            os: OS,
+        }, getArgv);
+        return res2;
+    }
+    return undefined;
 }

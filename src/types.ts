@@ -1,7 +1,7 @@
-export type CommandName = 'install' | 'stop' | 'log' | 'add' | 'import';
-export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log' | 'name' | 'path' | 'profile' | 'storages' | 'all-services' | 'all-storages';
+export type CommandName = 'install' | 'stop' | 'log' | 'add' | 'import' | 'push';
+export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log' | 'name' | 'path' | 'profile' | 'storages' | 'all-services' | 'all-storages' | 'zero-downtime' | 'docker-project';
 
-export type ConfigVariableKey = 'git_username' | 'git_password' | 'env_path' | 'dist_path' | 'dockerfiles_path' | 'ssl_path' | 'env_hooks_path' | 'dist_hooks_path' | 'backups_path';
+export type ConfigVariableKey = 'git_username' | 'git_password' | 'env_path' | 'dist_path' | 'dockerfiles_path' | 'ssl_path' | 'env_hooks_path' | 'dist_hooks_path' | 'backups_path' | 'before_hash';
 
 export type ServiceConfigsFunctionName = 'compileFiles' | 'init' | 'beforeBuild' | 'finish';
 
@@ -15,6 +15,11 @@ export interface ProjectConfigs {
         name: string;
         version?: number;
         extends?: string;
+        docker_project_base_path?: string;
+        /**
+         * @default docker.io
+         */
+        docker_push_host?: string;
         /**
          * @default 'docker.io'
          */
@@ -35,6 +40,11 @@ export interface ProjectConfigs {
     storages?: { [k: string]: Storage };
     backup?: ProjectBackupInfo;
     variables?: { [k: string]: any };
+
+    /**
+     * auto filled
+     */
+    _hash?: string;
 }
 
 export type ConfigMode = 'dev' | 'prod';
@@ -121,6 +131,7 @@ export interface Service {
         health_check?: HealthCheck;
         mounts?: string[];
         depends?: string[];
+        push?: { [dockerfile_name: string]: string };
 
         _expose_port?: number;
         _host_port?: number;

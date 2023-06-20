@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { checkContainerHealthy, checkExistDockerContainerByName, clone, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, parseHumanTimeToCronFormat, runDockerContainer, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
+import { _runProjectConfigsJsFile, checkContainerHealthy, checkExistDockerContainerByName, clone, cloneProjectServicesByConfigs, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, normalizeServicesByConfigs, parseHumanTimeToCronFormat, runDockerContainer, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
 import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -22,7 +22,6 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     projectConfigsJsFiles: {} = {};
     updatingServer = false;
     profile: Profile;
-    serviceConfigsFileName = 'service.configs.js';
     serviceNames: string[] = [];
 
     get name(): CommandName {
@@ -364,7 +363,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     }
     /**************************** */
     async runProjectConfigsJsFile(name: string, functionName: ServiceConfigsFunctionName = 'init') {
-        let res1 = await this._runProjectConfigsJsFile(name, functionName);
+        let res1 = await _runProjectConfigsJsFile(name, functionName, this.projectConfigsJsFiles, this.configs, this.getArgv);
         if (res1 !== undefined) {
             if (typeof res1 === 'object') {
                 this.configs = res1;
@@ -376,91 +375,23 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         }
         return true;
     }
-    /**************************** */
-    async _runProjectConfigsJsFile(name: string, functionName: ServiceConfigsFunctionName) {
-        if (this.projectConfigsJsFiles[name] && this.projectConfigsJsFiles[name][functionName]) {
-            let res2 = await this.projectConfigsJsFiles[name][functionName](this.configs, {
-                git: GIT,
-                logs: LOG,
-                os: OS,
-            }, this.getArgv);
-            return res2;
-        }
-        return undefined;
-    }
+
     /**************************** */
     async cloneProjectServices() {
-        for (const serviceName of Object.keys(this.configs.services)) {
-            let srv = this.configs.services[serviceName];
-            const serviceCustomPath = path.join(this.profile.path, 'services', serviceName);
-
-            // clone project in dist folder
-            let clonePath = path.join(this.configs._env.dist_path, 'clones', serviceName);
-            let skipCloneProjects = [];
-            if (this.hasArgv('skip-clone-projects')) {
-                skipCloneProjects = this.extractServiceNames('skip-clone-projects');
-            }
-
-            // =>check if allowed to clone project
-            if (!skipCloneProjects.includes(serviceName) && srv.clone) {
-                if (!srv.clone.branch) srv.clone.branch = 'master';
-                await OS.rmdir(clonePath);
-                fs.mkdirSync(clonePath, { recursive: true });
-                LOG.info(`cloning ${serviceName}@${srv.clone.branch} project...`);
-                let res = await GIT.clone({
-                    cloneUrl: srv.clone.url,
-                    branch: srv.clone.branch,
-                    depth: 1,
-                    username: this.configs._env.git_username,
-                    password: this.configs._env.git_password,
-                    directory: srv.clone.branch,
-                }, clonePath);
-                LOG.log(res.stderr);
-                if (res.code !== 0) return false;
-                // =>move from clone branch dir to root dir
-                await OS.copyDirectory(path.join(clonePath, srv.clone.branch), clonePath);
-                await OS.rmdir(path.join(clonePath, srv.clone.branch));
-            } else {
-                fs.mkdirSync(clonePath, { recursive: true });
-            }
-            // =>if exist service folder
-            if (fs.existsSync(serviceCustomPath)) {
-                let dirList = fs.readdirSync(serviceCustomPath, { withFileTypes: true });
-                for (const f of dirList) {
-                    if (f.isFile()) {
-                        fs.copyFileSync(path.join(serviceCustomPath, f.name), path.join(clonePath, f.name));
-                    }
-                }
-            }
-            // =>load 'service.configs.js' if exist
-            if (fs.existsSync(path.join(clonePath, this.serviceConfigsFileName))) {
-                this.projectConfigsJsFiles[serviceName] = await import(path.join(clonePath, this.serviceConfigsFileName));
-            }
-            // =>check if allowed to clone project
-            if (!skipCloneProjects.includes('*') && !skipCloneProjects.includes(serviceName)) {
-                // =>get compiled files
-                let compiledFiles = await this._runProjectConfigsJsFile(serviceName, 'compileFiles');
-                if (compiledFiles !== undefined && Array.isArray(compiledFiles)) {
-                    for (const file of compiledFiles) {
-                        // =>render app entrypoint
-                        if (fs.existsSync(path.join(clonePath, file))) {
-                            let data = clone(this.configs);
-                            data['envs'] = srv.docker.envs;
-                            // =>render file of project
-                            let renderFile = await TEM.renderFile(path.join(clonePath, file), { data, noCache: true });
-                            fs.writeFileSync(path.join(clonePath, file), renderFile.data);
-                        }
-                    }
-                }
-                // =>run init command
-                await this.runProjectConfigsJsFile(serviceName, 'init');
-            }
-            // =>render docker file of project, if exist
-            if (fs.existsSync(path.join(clonePath, 'Dockerfile'))) {
-                let renderDockerfile = await TEM.renderFile(path.join(clonePath, 'Dockerfile'), { data: this.configs, noCache: true });
-                fs.writeFileSync(path.join(this.configs._env.dockerfiles_path, `${serviceName}_Dockerfile`), renderDockerfile.data);
-            }
+        let serviceNames = Object.keys(this.configs.services);
+        let skipCloneProjects = [];
+        if (this.hasArgv('skip-clone-projects')) {
+            skipCloneProjects = this.extractServiceNames('skip-clone-projects');
         }
+        for (const srv of serviceNames) {
+            // =>check if allowed to clone project
+            if (skipCloneProjects.includes(srv) || !this.configs.services[srv]?.clone) {
+                serviceNames.splice(serviceNames.indexOf(srv), 1);
+            }
+
+        }
+        let res = await cloneProjectServicesByConfigs(serviceNames, this.profile, this.configs);
+        this.projectConfigsJsFiles = res.projectConfigsJsFiles;
     }
     /**************************** */
     async normalizeStorages() {
@@ -497,84 +428,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     }
     /**************************** */
     async normalizeServices() {
-        const customPath = path.join(this.profile.path, 'custom');
-        const envStaticPath = path.join(this.configs._env.env_path, 'static');
-        // =>iterate services
-        for (const serviceName of Object.keys(this.configs.services)) {
-            let srv = this.configs.services[serviceName];
-            const serviceCustomPath = path.join(this.profile.path, 'services', serviceName);
-            // =>normalize docker
-            if (srv.docker) {
-                // =>set static ip
-                if (this.configs.project.ip_mapping === 'static') {
-                    srv.docker.ip = await generateServiceContainerStaticIP(this.configs);
-                    srv.docker._network = 'project_services';
-                }
-                if (srv.docker.build_kit_enabled === undefined) srv.docker.build_kit_enabled = true;
-                if (!srv.docker.port) srv.docker.port = "80:80";
-                if (typeof srv.docker.port === 'number' || srv.docker.port.split(':').length == 1) {
-                    srv.docker.port = srv.docker.port + ":" + srv.docker.port;
-                }
-                srv.docker._expose_port = Number(srv.docker.port.split(':')[0]);
-                srv.docker._host_port = Number(srv.docker.port.split(':')[1]);
-                // =>normalize links
-                if (!srv.docker.links) srv.docker.links = [];
-                srv.docker.links = convertNameToContainerName(this.configs, srv.docker.links);
-                // =>normalize depends
-                if (!srv.docker.depends) srv.docker.depends = [];
-                srv.docker._depend_containers = convertNameToContainerName(this.configs, srv.docker.depends);
-                // =>normalize app health_check
-                if (srv.docker.health_check) {
-                    // srv.docker.health_check._test_str = `[ ${srv.docker.health_check.test.map(i => `"${i}"`).join(', ')} ]`;
-                    // if (!srv.docker.health_check.retries) srv.docker.health_check.retries = 30;
-                    // if (!srv.docker.health_check.timeout) srv.docker.health_check.timeout = 1;
-                }
-                // =>set health status
-                srv.docker._health_status = 'stopped';
-            }
-            // =>normalize web server
-            if (!srv.web) {
-                srv.web = {};
-            }
-            if (srv.web) {
-                // =>check locations
-                if (srv.web.locations) {
-                    for (const loc of srv.web.locations) {
-                        if (!loc.modifier) loc.modifier = '';
-                    }
-                }
-                // =>check error pages
-                if (!srv.web.error_pages) {
-                    srv.web.error_pages = {};
-                }
-                srv.web._abs_error_pages = {};
-                srv.web._use_error_pages_location = {};
-                for (const err of NginxErrorPageCodes) {
-                    srv.web._use_error_pages_location[err] = true;
-                    // =>if custom
-                    if (srv.web.error_pages[err]) {
-                        srv.web._abs_error_pages[err] = path.join(customPath, srv.web.error_pages[err]);
-                    }
-                    // =>default of nginx
-                    else {
-                        srv.web._abs_error_pages[err] = path.join(envStaticPath, err + '.html');
-                        srv.web.error_pages[err] = err + '.html';
-                    }
-                    // =>check crete location directive for current error page (not duplicate)
-                    if (Object.keys(srv.web.error_pages).find(i => i !== err && srv.web.error_pages[i] === srv.web.error_pages[err] && srv.web._use_error_pages_location[err])) {
-                        srv.web._use_error_pages_location[err] = false;
-                    }
-                }
-                // =>check maintenance
-                if (srv.web.maintenance && srv.web.maintenance.enabled) {
-                    if (srv.web.maintenance.filename) {
-                        srv.web._abs_error_pages['503'] = path.join(customPath, srv.web.maintenance.filename);
-                        srv.web.error_pages['503'] = srv.web.maintenance.filename;
-                    }
-                }
-            }
-
-        }
+        return await normalizeServicesByConfigs(Object.keys(this.configs.services), this.profile, this.configs);
     }
     /**************************** */
     extractServiceNames(commandName: CommandArgvName) {
