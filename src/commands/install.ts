@@ -383,13 +383,11 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         if (this.hasArgv('skip-clone-projects')) {
             skipCloneProjects = this.extractServiceNames('skip-clone-projects');
         }
-        for (const srv of serviceNames) {
+        for (const srv of skipCloneProjects) {
             // =>check if allowed to clone project
-            if (skipCloneProjects.includes(srv) || !this.configs.services[srv]?.clone) {
-                serviceNames.splice(serviceNames.indexOf(srv), 1);
-            }
-
+            serviceNames.splice(serviceNames.indexOf(srv), 1);
         }
+        // console.log(serviceNames, skipCloneProjects)
         let res = await cloneProjectServicesByConfigs(serviceNames, this.profile, this.configs);
         this.projectConfigsJsFiles = res.projectConfigsJsFiles;
     }
