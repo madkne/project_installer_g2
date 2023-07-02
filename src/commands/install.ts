@@ -110,18 +110,16 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         if (this.configs.domain.ssl_enabled) {
             await generateSSL(this.configs);
         }
-        // =>get git username, if not
-        if (!this.configs._env.git_username || this.configs._env.git_username.length === 0) {
-            this.configs._env.git_username = await IN.input('Enter git username:');
-            await ENV.save('git_username', this.configs._env.git_username);
-        }
-        // =>get git password, if not
-        if (!this.configs._env.git_password || this.configs._env.git_password.length === 0) {
-            this.configs._env.git_password = await IN.password('Enter git password:');
-            await ENV.save('git_password', this.configs._env.git_password);
-        }
-        // =>disable ssl verify
-        await OS.exec(`git config --global http.sslVerify false`);
+        // // =>get git username, if not
+        // if (!this.configs._env.git_username || this.configs._env.git_username.length === 0) {
+        //     this.configs._env.git_username = await IN.input('Enter git username:');
+        //     await ENV.save('git_username', this.configs._env.git_username);
+        // }
+        // // =>get git password, if not
+        // if (!this.configs._env.git_password || this.configs._env.git_password.length === 0) {
+        //     this.configs._env.git_password = await IN.password('Enter git password:');
+        //     await ENV.save('git_password', this.configs._env.git_password);
+        // }
         // =>remove unused docker images
         if (!this.hasArgv('skip-remove-unused-images')) {
             await LOG.info('removing unused docker images...');

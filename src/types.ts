@@ -1,5 +1,5 @@
-export type CommandName = 'install' | 'stop' | 'log' | 'add' | 'import' | 'push';
-export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log' | 'name' | 'path' | 'profile' | 'storages' | 'all-services' | 'all-storages' | 'zero-downtime' | 'docker-project';
+export type CommandName = 'install' | 'stop' | 'log' | 'add' | 'import' | 'push' | 'build';
+export type CommandArgvName = 'skip-remove-unused-images' | 'skip-clone-projects' | 'skip-build-projects' | 'remove-containers' | 'environment' | 'services' | 'follow' | 'service' | 'skip-caching-build' | 'skip-updating-server-log' | 'name' | 'path' | 'profile' | 'storages' | 'all-services' | 'all-storages' | 'zero-downtime' | 'docker-project' | 'no-cache';
 
 export type ConfigVariableKey = 'git_username' | 'git_password' | 'env_path' | 'dist_path' | 'dockerfiles_path' | 'ssl_path' | 'env_hooks_path' | 'dist_hooks_path' | 'backups_path' | 'before_hash';
 

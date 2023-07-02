@@ -14,10 +14,11 @@ import { LogCommand } from "./src/commands/log";
 import { AddCommand } from "./src/commands/add";
 import { ImportCommand } from "./src/commands/import";
 import { PushCommand } from "./src/commands/push";
- 
+import { BuildCommand } from "./src/commands/build";
+
 /************************************* */
-const VERSION = '0.96';
- 
+const VERSION = '0.97';
+
 /************************************* */
 export async function main(): Promise<number> {
    LOG.clear();
@@ -32,6 +33,7 @@ export async function main(): Promise<number> {
    LogCommand
    ImportCommand
    PushCommand
+   BuildCommand
 
    return 0;
 }

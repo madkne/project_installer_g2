@@ -7,6 +7,7 @@ import * as OS from '@dat/lib/os';
 import * as TEM from '@dat/lib/template';
 import * as yml from 'js-yaml';
 import * as GIT from '@dat/lib/git';
+import * as IN from '@dat/lib/input';
 
 
 export const serviceConfigsFileName = 'service.configs.js';
@@ -562,6 +563,18 @@ export async function normalizeServicesByConfigs(serviceNames: string[], profile
 }
 
 export async function cloneProjectServicesByConfigs(serviceNames: string[], profile: Profile, configs: ProjectConfigs) {
+    // =>get git username, if not
+    if (!configs._env.git_username || configs._env.git_username.length === 0) {
+        configs._env.git_username = await IN.input('Enter git username:');
+        await ENV.save('git_username', configs._env.git_username);
+    }
+    // =>get git password, if not
+    if (!configs._env.git_password || configs._env.git_password.length === 0) {
+        configs._env.git_password = await IN.password('Enter git password:');
+        await ENV.save('git_password', configs._env.git_password);
+    }
+    // =>disable ssl verify
+    await OS.exec(`git config --global http.sslVerify false`);
     let projectConfigsJsFiles: {} = {};
     for (const serviceName of serviceNames) {
         let srv = configs.services[serviceName];
