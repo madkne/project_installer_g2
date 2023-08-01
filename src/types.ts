@@ -162,7 +162,7 @@ export interface Service {
 
         _abs_error_pages?: { [k in NginxErrorPage]?: string };
 
-        _use_error_pages_location?: { [k in NginxErrorPage]?: boolean };
+        _use_error_pages_location?: { [k: string]: boolean };
     };
 
 }

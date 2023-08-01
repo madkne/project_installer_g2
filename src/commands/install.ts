@@ -442,7 +442,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         await this.collectNginxStaticFiles();
         await this.updateNginxConfigs(false);
         // =>rerender nginx server conf
-        await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
+        await this.renderNginxServersConfigs();
+        // await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
         // =>up nginx
         let webServerPorts = [{ host: 80, container: 80 }];
         const nginxContainerName = makeDockerServiceName('nginx', this.configs);
@@ -478,7 +479,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
     /**************************** */
     async updateNginxConfigs(restartContainer = true) {
         // =>rerender nginx server conf
-        await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
+        await this.renderNginxServersConfigs();
+        // await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
         if (restartContainer) {
             try {
                 await OS.exec(`sudo docker restart ${makeDockerServiceName('nginx', this.configs)}`)
@@ -526,6 +528,134 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             // cron.schedule(`${plan.crontab_time} /bin/bash ${planScriptPath}`,)
             await OS.shell(`crontab -l > mycron;echo "${crontabLine}" >> mycron;crontab mycron;rm mycron
             `);
+        }
+    }
+    /**************************** */
+    async renderNginxServersConfigs() {
+        // await TEM.saveRenderFile(path.join(this.configs._env.env_hooks_path, 'nginx/conf/servers.conf'), path.dirname(path.join(this.configs._env.dist_hooks_path, 'nginx/conf/servers.conf')), { data: this.configs, noCache: true });
+        // =>iterate for services
+        for (const srv of Object.keys(this.configs.services)) {
+            const service = this.configs.services[srv];
+            let serviceConfig: string[] = [];
+            let isRootDomain = false;
+            let domainName = '';
+            // =>add upstream
+            serviceConfig.push(`
+upstream ${srv} {
+    ip_hash;
+    server ${service?.docker?._ip ?? '127.0.0.1'}:${service?.docker?._expose_port ?? '80'}  max_fails=1 fail_timeout=3s;
+    server 127.0.0.1 down; # for quick 502 error 
+}`);
+            // =>generate domain name
+            if (String(service?.sub_domain).trim().length === 0 || service?.sub_domain === '.') {
+                domainName = this.configs.domain?.name;
+                isRootDomain = true;
+            } else {
+                domainName = service.sub_domain + '.' + this.configs.domain?.name;
+            }
+            // =>if ssl enabled
+            if (this.configs?.domain?.ssl_enabled) {
+                serviceConfig.push(`
+server {
+    listen 80;
+    server_name ${domainName} www.${domainName};
+    return 301 https://$host$request_uri; 
+}
+`);
+            }
+            // add main server
+            serviceConfig.push(`
+server {
+    # 1. Allow any origin
+    add_header 'Access-Control-Allow-Origin' '*' always;
+    # 2. Credentials can be cookies, authorization headers or TLS client certificates
+    add_header 'Access-Control-Allow-Credentials' 'true';
+    # 3. What methods should be allowed when accessing the resource in response to a preflight request
+    add_header 'Access-Control-Allow-Methods' 'GET, POST, PATCH, PUT, DELETE, OPTIONS';
+    # 4. Access-Control-Allow-Headers response header is used in response to a preflight request to indicate which HTTP headers can be used during the actual request.
+    add_header 'Access-Control-Allow-Headers' 'DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization';
+    
+    # Allow large cookies
+    proxy_buffer_size 8k;
+    client_max_body_size 5G;
+`);
+            // =>if ssl enabled
+            if (this.configs?.domain?.ssl_enabled) {
+                serviceConfig.push('listen 443 ssl;');
+                // =>if root domain
+                if (isRootDomain) {
+                    serviceConfig.push(`ssl_certificate /etc/nginx/certs/root/cert.crt;`);
+                    serviceConfig.push(`ssl_certificate_key /etc/nginx/certs/root/cert.key;`);
+                }
+                // wildcard domain
+                else {
+                    serviceConfig.push(`ssl_certificate /etc/nginx/certs/wildcard/cert.crt;`);
+                    serviceConfig.push(`ssl_certificate_key /etc/nginx/certs/wildcard/cert.key;`);
+                }
+            }
+            else {
+                serviceConfig.push(`listen 80;`);
+            }
+
+            serviceConfig.push(`server_name ${domainName} www.${domainName};`);
+
+            // =>add locations
+            if (service?.web?.locations) {
+                for (const loc of service.web.locations) {
+                    serviceConfig.push(`
+location ${loc.modifier} ${loc.url} {
+    ${loc.internal ? 'internal;' : ''}
+    ${loc.alias ? 'alias ' + loc.alias + ';' : ''}
+}
+`);
+                }
+            }
+
+            // =>point to proxy server
+            serviceConfig.push(`
+location @proxy_to_${srv}_app {
+    proxy_connect_timeout 60s;
+    proxy_send_timeout   600;
+    proxy_read_timeout   600;
+    proxy_redirect off;
+    proxy_set_header Host $http_host;
+    proxy_set_header   X-Real-IP          $remote_addr;
+    proxy_set_header   X-Forwarded-Proto  $scheme;
+    proxy_set_header   X-Forwarded-For    $proxy_add_x_forwarded_for;
+    proxy_pass http://${srv};
+    proxy_hide_header access-control-allow-credentials;
+    proxy_hide_header access-control-allow-origin;
+}`);
+
+            // =>location root
+            serviceConfig.push(`
+location / {
+    # uwsgi_pass  django;
+    try_files $uri @proxy_to_${srv}_app;
+    include     /etc/nginx/uwsgi_params;
+}
+`);
+
+            // handle error pages
+            if (service?.web?.error_pages) {
+                for (const err of Object.keys(service?.web?.error_pages)) {
+                    const errorPage = service.web.error_pages[err];
+                    serviceConfig.push(`error_page ${err} /${errorPage};`);
+                    if (!service.web._use_error_pages_location[errorPage]) {
+                        serviceConfig.push(`
+location /${errorPage} {
+    root /var/static/;
+    internal;
+}`);
+                        service.web._use_error_pages_location[errorPage] = true;
+                    }
+                }
+            }
+
+            serviceConfig.push('}');
+
+
+            fs.writeFileSync(path.join(this.configs._env.dist_hooks_path, 'nginx', 'conf', srv + '.conf'), serviceConfig.join('\n'));
         }
     }
 } 
