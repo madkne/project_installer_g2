@@ -11,6 +11,12 @@ export async function normalizeMysql(configs: ProjectConfigs, storageName: strin
         // '--tls-version=invalid',
         '--skip-ssl',
         '--default-authentication-plugin=mysql_native_password',
+        '--log_error=/var/lib/mysql/mysql_error.log',
+        '--general_log_file=/var/lib/mysql/mysql.log',
+        '--general_log=1',
+        '--slow_query_log=1',
+        '--slow_query_log_file=/var/lib/mysql/mysql_slow.log',
+        '--long_query_time=2', '--log_queries_not_using_indexes=1',
     ]
     db['capAdd'] = 'sys_nice';
     const mysqlHookPath = path.join(configs._env.dist_path, 'hooks', 'mysql', storageName);
@@ -24,11 +30,11 @@ set -eo pipefail\n`;
     db.realPort = 3306;
     // =>add volumes
     const mysqlDataPath = path.join('data', 'mysql_data', storageName);
-    const mysqlLogPath = path.join('data', 'mysql_log', storageName);
+    // const mysqlLogPath = path.join('data', 'mysql_log', storageName);
     fs.mkdirSync(path.join(configs._env.dist_path, mysqlDataPath, '..'), { recursive: true });
     db.volumes = [
         `./${mysqlDataPath}:/var/lib/mysql`,
-        `./${mysqlLogPath}:/var/log/mysql`
+        // `./${mysqlLogPath}:/var/log/mysql`
         // `./hooks/mysql/my.cnf:/etc/mysql/my.cnf`,
     ];
     // =>set envs
