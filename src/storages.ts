@@ -24,9 +24,11 @@ set -eo pipefail\n`;
     db.realPort = 3306;
     // =>add volumes
     const mysqlDataPath = path.join('data', 'mysql_data', storageName);
+    const mysqlLogPath = path.join('data', 'mysql_log', storageName);
     fs.mkdirSync(path.join(configs._env.dist_path, mysqlDataPath, '..'), { recursive: true });
     db.volumes = [
         `./${mysqlDataPath}:/var/lib/mysql`,
+        `./${mysqlLogPath}:/var/log/mysql`
         // `./hooks/mysql/my.cnf:/etc/mysql/my.cnf`,
     ];
     // =>set envs
@@ -55,6 +57,9 @@ set -eo pipefail\n`;
             //     \n\n`;
             dbNameCommands.push(`CREATE DATABASE IF NOT EXISTS \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`);
         }
+        dbNameCommands.push(`SET global general_log = on;`);
+        dbNameCommands.push(`SET global general_log_file='/var/log/mysql/mysql.log';`);
+        dbNameCommands.push(`SET global log_output = 'file';`);
         // initSqlFile += `
         // docker_process_sql --database=mysql <<< "GRANT ALL PRIVILEGES ON * . * TO 'root'@'%';"
         // docker_process_sql --database=mysql <<< "ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '${db.root_password}';" 
