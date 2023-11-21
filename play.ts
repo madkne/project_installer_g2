@@ -17,7 +17,7 @@ import { PushCommand } from "./src/commands/push";
 import { BuildCommand } from "./src/commands/build";
 
 /************************************* */
-const VERSION = '1.00';
+const VERSION = '1.01';
 
 /************************************* */
 export async function main(): Promise<number> {

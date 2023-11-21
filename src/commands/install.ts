@@ -1,5 +1,5 @@
 import { cliCommandItem, CliCommand, OnImplement, CommandArgvItem } from '@dat/lib/argvs';
-import { _runProjectConfigsJsFile, checkContainerHealthy, checkExistDockerContainerByName, clone, cloneProjectServicesByConfigs, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, normalizeServicesByConfigs, parseHumanTimeToCronFormat, runDockerContainer, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
+import { _runProjectConfigsJsFile, checkContainerHealthy, checkExistDockerContainerByName, clone, cloneProjectServicesByConfigs, convertNameToContainerName, copyExistFile, findProfileByName, generateServiceContainerStaticIP, generateSSL, getContainerIP, loadAllConfig, loadProfiles, makeDockerServiceName, makeDockerStorageName, makeServiceImageName, NginxErrorPageCodes, normalizeServicesByConfigs, parseHumanTimeToCronFormat, runDockerContainer, serviceConfigsFileName, ServicesNetworkSubnetStartOf, setContainersHealthy, stopContainers } from '../common';
 import { CommandArgvName, CommandName, Storage, Profile, Service, ProjectConfigs, ServiceConfigsFunctionName } from '../types';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -71,12 +71,18 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             {
                 name: 'skip-caching-build',
                 alias: 's4',
-                description: 'skip to caching build dockerfile of all or specific projects (like * or app1,app2)',
+                description: 'skip to caching build dockerfile of all or specific services (like * or app1,app2)',
+                type: 'string',
+            },
+            {
+                name: 'skip-finish-event',
+                alias: 's5',
+                description: 'skip to execute finish event function of all or specific services (like * or app1,app2)',
                 type: 'string',
             },
             {
                 name: 'skip-updating-server-log',
-                alias: 's5',
+                alias: 's6',
                 description: 'skip to wall updating server message',
                 type: 'string',
             },
@@ -122,15 +128,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         // }
         // =>remove unused docker images
         if (!this.hasArgv('skip-remove-unused-images')) {
-            await LOG.info('removing unused docker images...');
-            if (await OS.checkCommand('sudo docker images --filter "dangling=true" -q --no-trunc')) {
-                await OS.shell(`sudo docker rmi $(sudo docker images --filter "dangling=true" -q --no-trunc)
-            `);
-            }
-            if (await OS.checkCommand(`sudo docker images | grep "^<none" | awk '{print $3}'`)) {
-                await OS.shell(`sudo docker rmi $(sudo docker images | grep "^<none" | awk '{print $3}')
-            `);
-            }
+            await this.removeUnusedDockerImages();
         }
         // =>create static networks
         if (this.configs.project.ip_mapping === 'static') {
@@ -144,7 +142,6 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         await this.cloneProjectServices();
 
         // =>create hook dirs
-
         let hookDirs = ['mysql', 'nginx', 'nginx/conf'];
         for (const d of hookDirs) {
             fs.mkdirSync(path.join(this.configs._env.dist_path, 'hooks', d), { recursive: true });
@@ -213,6 +210,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         if (this.hasArgv('remove-containers')) {
             await stopContainers(this.configs, Object.keys(this.configs.storages), true, 'storage');
             await this.restartNginx();
+        }
+        // =>remove unused docker images
+        if (!this.hasArgv('skip-remove-unused-images')) {
+            await this.removeUnusedDockerImages();
         }
         // =>up storages docker containers
         LOG.info('Running storages...');
@@ -321,6 +322,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         if (this.configs.project.debug) {
             console.log(JSON.stringify(this.configs, null, 2));
         }
+
+        const skipExecFinishEventServices = this.extractServiceNames('skip-finish-event');
         // =>iterate projects
         for (const name of this.serviceNames) {
             let clonePath = path.join(this.configs._env.dist_path, 'clones', name);
@@ -328,8 +331,10 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             if (fs.existsSync(path.join(clonePath, 'docker_entrypoint.sh'))) {
                 await TEM.saveRenderFile(path.join(clonePath, 'docker_entrypoint.sh'), path.join(clonePath), { data: this.configs, noCache: true });
             }
-            // =>run 'finish' function
-            await this.runProjectConfigsJsFile(name, 'finish');
+            // =>run 'finish' function, if allowed
+            if (!skipExecFinishEventServices.includes(name)) {
+                await this.runProjectConfigsJsFile(name, 'finish');
+            }
 
         }
         // =>update backups
@@ -342,6 +347,18 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         LOG.success(`You must set '${this.configs.domain.name}' and the other sub domains on '/etc/hosts' file.\nYou can see project on http${this.configs.domain.ssl_enabled ? 's' : ''}://${this.configs.domain.name}`);
 
         return true;
+    }
+    /**************************** */
+    async removeUnusedDockerImages() {
+        await LOG.info('removing unused docker images...');
+        if (await OS.checkCommand('sudo docker images --filter "dangling=true" -q --no-trunc')) {
+            await OS.shell(`sudo docker rmi $(sudo docker images --filter "dangling=true" -q --no-trunc)
+            `);
+        }
+        if (await OS.checkCommand(`sudo docker images | grep "^<none" | awk '{print $3}'`)) {
+            await OS.shell(`sudo docker rmi $(sudo docker images | grep "^<none" | awk '{print $3}')
+            `);
+        }
     }
     /**************************** */
     async collectNginxStaticFiles() {
@@ -387,6 +404,29 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         }
         // console.log(serviceNames, skipCloneProjects)
         let res = await cloneProjectServicesByConfigs(serviceNames, this.profile, this.configs);
+        // =>load js scripts
+        for (const srv of Object.keys(this.configs.services)) {
+            // clone project in dist folder
+            let clonePath = path.join(this.configs._env.dist_path, 'clones', srv);
+            const serviceCustomPath = path.join(this.profile.path, 'services', srv);
+            fs.mkdirSync(clonePath, { recursive: true });
+            // =>if exist service folder
+            if (fs.existsSync(serviceCustomPath)) {
+                let dirList = fs.readdirSync(serviceCustomPath, { withFileTypes: true });
+                for (const f of dirList) {
+                    if (f.isFile() && !fs.existsSync(path.join(clonePath, f.name))) {
+                        fs.copyFileSync(path.join(serviceCustomPath, f.name), path.join(clonePath, f.name));
+                    }
+                }
+            }
+            // =>load 'service.configs.js' if exist
+            if (fs.existsSync(path.join(clonePath, serviceConfigsFileName))) {
+                if (res.projectConfigsJsFiles[srv]) continue;
+                res.projectConfigsJsFiles[srv] = await import(path.join(clonePath, serviceConfigsFileName));
+            }
+        }
+
+
         this.projectConfigsJsFiles = res.projectConfigsJsFiles;
     }
     /**************************** */
@@ -602,10 +642,17 @@ server {
             // =>add locations
             if (service?.web?.locations) {
                 for (const loc of service.web.locations) {
+                    let body = [];
+                    if (loc.internal) body.push('internal;');
+                    if (loc.alias) body.push('alias ' + loc.alias + ';');
+                    if (loc.body) {
+                        for (const item of loc.body) {
+                            body.push(item);
+                        }
+                    }
                     serviceConfig.push(`
 location ${loc.modifier} ${loc.url} {
-    ${loc.internal ? 'internal;' : ''}
-    ${loc.alias ? 'alias ' + loc.alias + ';' : ''}
+    ${body.join('\n')}
 }
 `);
                 }

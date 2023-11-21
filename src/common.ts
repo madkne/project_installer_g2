@@ -235,6 +235,9 @@ export function makeDockerStorageName(name: string, configs: ProjectConfigs) {
 }
 
 export function makeServiceImageName(name: string, configs: ProjectConfigs) {
+    if (configs.services[name] && configs.services[name].docker?.image) {
+        return configs.services[name].docker?.image;
+    }
     return `${configs.project.name}_${name}:${configs.project.version ?? '1'}`;
 }
 
@@ -652,6 +655,7 @@ export async function _runProjectConfigsJsFile(name: string, functionName: Servi
             git: GIT,
             logs: LOG,
             os: OS,
+            template: TEM,
         }, getArgv);
         return res2;
     }
