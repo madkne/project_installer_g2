@@ -73,6 +73,11 @@ config files must be have such pattern: `configs.[env].yml`
 |modifier| NO |Having a modifier in the location block will allow NGINX to treat a URL differently.|
 |alias| NO | final path|
 internal| NO | This tells nginx it's not accessible from the outside|
+|body| NO | every valid command for nginx. also you can use some pre-defined variables on it!|
+
+##### pre-defined variables (on body location)
+
+- `$[service]$` like `$wordpress$`: this variable, set service (wordpress) docker private ip like `172.18.0.2`
 
 #### `maintenance`
 |property| required | description|

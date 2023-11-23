@@ -646,7 +646,19 @@ server {
                     if (loc.internal) body.push('internal;');
                     if (loc.alias) body.push('alias ' + loc.alias + ';');
                     if (loc.body) {
-                        for (const item of loc.body) {
+                        for (let item of loc.body) {
+                            // =>check for pre defined variable
+                            if (/\$\w+\$/.test(item)) {
+                                const m = item.match(/\$\w+\$/g);
+                                for (let i = 0; i < m.length; i++) {
+                                    const name = m[i].replace(/\$/g, '');
+                                    // =>check if a service name
+                                    if (this.configs.services[name]) {
+                                        const serviceIp = this.configs.services[name].docker?._ip;
+                                        item = item.replace(m[i], serviceIp);
+                                    }
+                                }
+                            }
                             body.push(item);
                         }
                     }
