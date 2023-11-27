@@ -182,6 +182,8 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         for (const serviceName of this.serviceNames) {
             let service = this.configs.services[serviceName];
             let clonePath = path.join(this.configs._env.dist_path, 'clones', serviceName);
+            // =>skip, if service used custom image
+            if (service.docker?.image) continue;
             // =>check if allowed to clone project
             if (!skipBuildProjects.includes(serviceName)) {
                 // =>run 'beforeBuild' function
@@ -323,7 +325,7 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
             console.log(JSON.stringify(this.configs, null, 2));
         }
 
-        const skipExecFinishEventServices = this.extractServiceNames('skip-finish-event');
+        const skipExecFinishEventServices = this.extractServiceNames('skip-finish-event', false);
         // =>iterate projects
         for (const name of this.serviceNames) {
             let clonePath = path.join(this.configs._env.dist_path, 'clones', name);
@@ -467,9 +469,9 @@ export class InstallCommand extends CliCommand<CommandName, CommandArgvName> imp
         return await normalizeServicesByConfigs(Object.keys(this.configs.services), this.profile, this.configs);
     }
     /**************************** */
-    extractServiceNames(commandName: CommandArgvName) {
+    extractServiceNames(commandName: CommandArgvName, defaultBeAllServices = true) {
         let allServiceNames = Object.keys(this.configs.services);
-        let serviceNames = this.getArgv(commandName) ? this.getArgv(commandName).split(',').map(i => i.trim()).filter(i => allServiceNames.includes(i)) : allServiceNames;
+        let serviceNames = this.getArgv(commandName) ? this.getArgv(commandName).split(',').map(i => i.trim()).filter(i => allServiceNames.includes(i)) : (defaultBeAllServices ? allServiceNames : []);
 
         return serviceNames;
     }
